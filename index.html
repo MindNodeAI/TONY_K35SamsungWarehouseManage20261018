@@ -1,0 +1,2511 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>三星通路倉庫 (汐止倉) 資產保管與盤點管理系統</title>
+
+  <!-- Google Fonts: Inter & Noto Sans TC -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+
+  <!-- Firebase Compat SDKs (App & Firestore) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+  <!-- html2pdf.js CDN (支援直接一鍵產出並下載 PDF 檔案，不受預覽視窗攔截影響) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+      body {
+        background: #ffffff;
+      }
+      main, header {
+        display: none !important;
+      }
+      #reportModal {
+        position: static !important;
+        display: block !important;
+        background: #ffffff !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+      #reportModal > div {
+        max-width: 100% !important;
+        max-height: none !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+      }
+      #reportPrintableArea {
+        overflow: visible !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Toast 通知容器 -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- 頂部 Header -->
+  <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-lg tracking-wider shadow-inner">
+          SES
+        </div>
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold tracking-tight">
+              三星通路倉庫 資產保管與盤點管理系統
+            </h1>
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-400/30">
+              汐止倉 (約80坪) | 橫科路407巷
+            </span>
+            <span id="firebaseStatusBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-400/30">
+              <span id="firebaseStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+              <span id="firebaseStatusText">Firestore 連線初始化中...</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">
+            專人現場開關門借還點交 ‧ 定期清點數量與拍照回報三星 ‧ RFP 77項標準品項主檔連動 (Firebase 雲端同步)
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btnOpenEnrollTop" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          從產品清單建入庫存
+        </button>
+        <button id="btnOpenLoanTop" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+          專人開門 / 借還登記
+        </button>
+        <button id="btnSyncSeed" type="button" title="將預設77項品項與範例庫存同步寫入Firestore" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          初始化/同步雲端資料
+        </button>
+      </div>
+    </div>
+
+    <!-- 主導覽列 Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto border-t border-slate-800/80 pt-1 custom-scrollbar">
+      <button type="button" data-tab="inventory" class="nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-blue-400 text-white bg-slate-800/70 rounded-t-lg">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        <span>1. 前台庫存總覽 (資產台帳)</span>
+        <span id="badgeInventoryCount" class="px-1.5 py-0.5 text-[11px] rounded-full bg-blue-500 text-white">0</span>
+      </button>
+
+      <button type="button" data-tab="catalog" class="nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+        <span>2. 產品品項主檔 (RFP 77項建入)</span>
+        <span id="badgeCatalogCount" class="px-1.5 py-0.5 text-[11px] rounded-full bg-slate-800 text-slate-300">77</span>
+      </button>
+
+      <button type="button" data-tab="access_loan" class="nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+        <span>3. 專人開關門 & 借出/歸還紀錄</span>
+        <span id="badgeActiveLoans" class="px-1.5 py-0.5 text-[11px] rounded-full bg-slate-800 text-slate-300">0</span>
+      </button>
+
+      <button type="button" data-tab="audit" class="nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        <span>4. 半年/季度盤點作業 (拍照提供三星)</span>
+        <span id="badgeAuditProgress" class="px-1.5 py-0.5 text-[11px] rounded-full bg-slate-800 text-slate-300">100%</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主要內容區 -->
+  <main class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 flex-1">
+
+    <!-- 頂部四張核心 KPI 卡片 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
+      <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-start justify-between">
+        <div>
+          <span class="text-xs font-medium text-slate-500">前台已建檔列管資產</span>
+          <div class="text-2xl font-bold text-slate-900 mt-1">
+            <span id="kpiTotalAssets">0</span> <span class="text-sm font-normal text-slate-500">筆資產編號</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">
+            庫存總件數：<strong id="kpiTotalUnits" class="text-slate-700">0</strong> 件 (在庫 <span id="kpiAvailableUnits" class="font-semibold text-emerald-600">0</span> 件)
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-start justify-between">
+        <div>
+          <span class="text-xs font-medium text-slate-500">RFP 標準產品品項主檔</span>
+          <div class="text-2xl font-bold text-slate-900 mt-1">
+            <span id="kpiCatalogCount">77</span> <span class="text-sm font-normal text-slate-500">項標準道具</span>
+          </div>
+          <p class="text-xs text-blue-600 mt-1 font-medium">
+            支援盤點時直接下拉選取建入前台庫存
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-start justify-between">
+        <div>
+          <span class="text-xs font-medium text-slate-500">活動廠商外借中道具</span>
+          <div class="text-2xl font-bold text-amber-600 mt-1">
+            <span id="kpiBorrowedUnits">0</span> <span class="text-sm font-normal text-slate-500">件外借中</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">
+            未結案借出單：<strong id="kpiActiveLoans" class="text-slate-700">0</strong> 筆 (需專人開門點交)
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-start justify-between">
+        <div>
+          <span class="text-xs font-medium text-slate-500">本期盤點與拍照完成率</span>
+          <div class="text-2xl font-bold text-emerald-600 mt-1">
+            <span id="kpiAuditProgress">100%</span> <span id="kpiAuditRatio" class="text-sm font-normal text-slate-500">(0/0)</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">
+            Firestore 即時同步 ‧ 支援匯出三星查核表
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================
+         SECTION 1: 前台庫存總覽 (資產台帳)
+         ==================================================== -->
+    <section id="tabSection_inventory" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/60">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+            前台庫存總覽（汐止倉已入庫資產台帳 - Firestore `inventory` 集合）
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            顯示目前已賦予「資產編號」並建入倉庫管理的實體道具、櫃體、家具與設備，可隨時進行盤點清點、拍照更新或借出登記
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnOpenEnrollInv" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer">
+            + 從產品清單選擇建入庫存
+          </button>
+          <button id="btnExportCsvInv" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition cursor-pointer">
+            匯出 CSV 庫存表
+          </button>
+        </div>
+      </div>
+
+      <!-- 搜尋與篩選列 -->
+      <div class="p-4 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="relative">
+          <input id="invSearchInput" type="text" placeholder="搜尋資產編號、產品名稱、規格或儲位..." class="w-full pl-3 pr-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <select id="invCategorySelect" class="w-full py-2 px-3 text-xs sm:text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="全部">類別：全部</option>
+          </select>
+        </div>
+        <div>
+          <select id="invZoneSelect" class="w-full py-2 px-3 text-xs sm:text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="全部">倉儲分區：全部</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 庫存表格 -->
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100/80 text-slate-600 text-xs font-semibold border-b border-slate-200">
+              <th class="py-3 px-4">盤點照片</th>
+              <th class="py-3 px-4">資產編號</th>
+              <th class="py-3 px-4">產品名稱 / 規格</th>
+              <th class="py-3 px-4">儲位區域</th>
+              <th class="py-3 px-4 text-right">帳面總數</th>
+              <th class="py-3 px-4 text-right">在庫可用</th>
+              <th class="py-3 px-4 text-right">外借中</th>
+              <th class="py-3 px-4">狀態 / 盤點結果</th>
+              <th class="py-3 px-4 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody" class="divide-y divide-slate-200 text-xs sm:text-sm"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ====================================================
+         SECTION 2: 產品品項主檔 (RFP 77項標準清單)
+         ==================================================== -->
+    <section id="tabSection_catalog" class="hidden bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/60">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+            三星 RFP 產品品項主檔（共 77 項標準道具與設備）
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            已內建 RFP 報價單整理的 77 項標準產品清單；在倉庫現場盤點或新道具入庫時，點擊右側「<strong class="text-blue-600">選取建入前台庫存</strong>」即可填寫資產編號與數量並寫入 Firestore。
+          </p>
+        </div>
+        <button id="btnAddCustomCatalog" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition cursor-pointer">
+          + 新增自訂產品品項
+        </button>
+      </div>
+
+      <!-- 搜尋與篩選列 -->
+      <div class="p-4 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <input id="catSearchInput" type="text" placeholder="搜尋品項名稱、代碼、規格、材質備註..." class="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <select id="catCategorySelect" class="w-full py-2 px-3 text-xs sm:text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="全部">產品類別：全部</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 品項表格 -->
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100/80 text-slate-600 text-xs font-semibold border-b border-slate-200">
+              <th class="py-3 px-4">品項代碼</th>
+              <th class="py-3 px-4">產品類別</th>
+              <th class="py-3 px-4">產品名稱</th>
+              <th class="py-3 px-4">規格 / 尺寸</th>
+              <th class="py-3 px-4 text-center">單位</th>
+              <th class="py-3 px-4 text-right">交接時數量</th>
+              <th class="py-3 px-4 text-center">已建入庫存筆數</th>
+              <th class="py-3 px-4 text-right">盤點建入操作</th>
+            </tr>
+          </thead>
+          <tbody id="catalogTableBody" class="divide-y divide-slate-200 text-xs sm:text-sm"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ====================================================
+         SECTION 3: 專人開關門 & 活動廠商借出/歸還紀錄
+         ==================================================== -->
+    <section id="tabSection_access_loan" class="hidden space-y-4">
+      <div class="bg-gradient-to-r from-slate-900 to-blue-950 text-white rounded-xl p-4 sm:p-5 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div class="space-y-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-400 text-slate-950">
+              RFP 日常維護 ‧ 倉儲管理標準作業
+            </span>
+            <h2 class="text-base font-bold">活動廠商拿取/歸還道具 ‧ 專人現場開關門與借還點交紀錄 (Firestore `access_logs`)</h2>
+          </div>
+          <p class="text-xs text-slate-300">
+            依據 RFP 規範：活動廠商欲前往汐止倉拿取或歸還道具時，需由專人至現場開關門、核對資產編號與件數，並同步更新在庫可用數量。
+          </p>
+        </div>
+        <button id="btnOpenLoanSec" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition cursor-pointer shrink-0">
+          + 新增專人開關門 / 借還單
+        </button>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex-1 min-w-[240px]">
+            <input id="logSearchInput" type="text" placeholder="搜尋活動廠商名稱、專案活動、資產編號、開門專人..." class="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" data-logfilter="全部" class="log-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white cursor-pointer">全部紀錄</button>
+            <button type="button" data-logfilter="借出" class="log-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer">借出紀錄</button>
+            <button type="button" data-logfilter="歸還" class="log-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer">歸還紀錄</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-100/80 text-slate-600 text-xs font-semibold border-b border-slate-200">
+                <th class="py-3 px-4">單號 / 日期</th>
+                <th class="py-3 px-4">作業類型</th>
+                <th class="py-3 px-4">現場開關門時段 & 專人</th>
+                <th class="py-3 px-4">活動廠商 & 用途專案</th>
+                <th class="py-3 px-4">點交道具清單 (多品項明細)</th>
+                <th class="py-3 px-4 text-right">總件數</th>
+                <th class="py-3 px-4">目前狀態 / 預計歸還</th>
+                <th class="py-3 px-4 text-right">管理操作</th>
+              </tr>
+            </thead>
+            <tbody id="accessLogTableBody" class="divide-y divide-slate-200 text-xs sm:text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================
+         SECTION 4: 半年/季度盤點作業 (清點數量 & 拍照整理提供給三星)
+         ==================================================== -->
+    <section id="tabSection_audit" class="hidden space-y-5">
+      <div class="bg-white rounded-xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="space-y-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="text-base font-bold text-slate-900">
+              定期盤點協助作業（清點數量 & 拍照整理提供給三星）
+            </h2>
+            <span id="auditPeriodBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              當前盤點期別：2026-H2 (下半年定期盤點)
+            </span>
+          </div>
+          <p class="text-xs text-slate-500">
+            支援 RFP 第 4 分頁《日常維護》所列之「一年兩次盤點協助」與「一年四次盤點協助」規格，逐項清點在庫數量、上傳實品照片並同步儲存至 Firebase。
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100">
+            <button id="btnCycleBiannual" type="button" class="px-3 py-1.5 rounded-md text-xs font-semibold bg-white text-blue-700 shadow-sm transition cursor-pointer">
+              方案A：一年兩次盤點 (H1/H2)
+            </button>
+            <button id="btnCycleQuarterly" type="button" class="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 transition cursor-pointer">
+              方案B：一年四次盤點 (Q1~Q4)
+            </button>
+          </div>
+
+          <button id="btnOpenReportModal" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition cursor-pointer">
+            預覽提交給三星之圖文盤點報告
+          </button>
+        </div>
+      </div>
+
+      <!-- 盤點卡片網格 -->
+      <div id="auditCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+  </main>
+
+  <!-- ====================================================
+       MODAL 1: 從「產品品項清單」選取並建入「前台庫存」
+       ==================================================== -->
+  <div id="enrollModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-xl overflow-hidden my-8">
+      <div class="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">依盤點選擇產品品項 ‧ 逐項建入前台庫存</h3>
+        <button id="btnCloseEnrollModal" type="button" class="text-slate-400 hover:text-white cursor-pointer text-lg leading-none">&times;</button>
+      </div>
+
+      <form id="enrollForm" class="p-5 space-y-4 text-xs sm:text-sm">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">1. 選擇三星 RFP 標準產品品項 (共 77 項可選) *</label>
+          <select id="enrollCatalogSelect" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">2. 資產編號 (Asset No.) *</label>
+            <input id="enrollAssetCode" type="text" required placeholder="例如：SAM-CAB-2026-008" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono text-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">3. 汐止倉存放儲位 *</label>
+            <input id="enrollZone" type="text" required placeholder="例如：A區-重型櫃體區-02" class="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">實點入庫總數 *</label>
+            <input id="enrollTotalQty" type="number" min="1" required value="1" class="w-full p-2.5 border border-slate-300 rounded-lg font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">在庫可用數 *</label>
+            <input id="enrollAvailableQty" type="number" min="0" required value="1" class="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-emerald-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">外觀/資產狀況</label>
+            <select id="enrollCondition" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white">
+              <option value="全新待用">全新待用</option>
+              <option value="良好" selected>良好</option>
+              <option value="輕微使用痕跡">輕微使用痕跡</option>
+              <option value="待維修整理">待維修整理</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">4. 現場盤點拍照上傳 (自動壓縮同步至 Firestore)</label>
+          <div class="flex items-center gap-3">
+            <img id="enrollPhotoPreview" src="" alt="預覽" class="w-20 h-14 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100" />
+            <label class="flex-1 border border-dashed border-slate-300 rounded-lg p-2.5 text-center cursor-pointer hover:bg-slate-50 transition">
+              <span class="text-xs font-medium text-blue-600 block">點擊上傳現場拍攝照片 (或使用自動產生之標準圖卡)</span>
+              <input id="enrollPhotoInput" type="file" accept="image/*" class="hidden" />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">5. 材質與入庫盤點備註</label>
+          <textarea id="enrollNote" rows="2" class="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button id="btnCancelEnroll" type="button" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer">取消</button>
+          <button type="submit" class="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer">確認建入前台庫存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       MODAL 2: 專人至現場開關門 & 活動廠商借出/歸還登記 (支援多品項新增/刪除與編輯)
+       ==================================================== -->
+  <div id="loanModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-xl overflow-hidden my-8">
+      <div class="px-5 py-4 bg-emerald-900 text-white flex items-center justify-between">
+        <div>
+          <h3 id="loanModalTitle" class="text-base font-bold">活動廠商拿取/歸還道具 ‧ 專人現場開關門登記 (多品項點交)</h3>
+          <p class="text-[11px] text-emerald-200 mt-0.5">單次開關門可同時點交多項道具，儲存後將自動連動增減各品項之在庫可用與外借數量</p>
+        </div>
+        <button id="btnCloseLoanModal" type="button" class="text-emerald-200 hover:text-white cursor-pointer text-lg leading-none">&times;</button>
+      </div>
+
+      <form id="loanForm" class="p-5 space-y-4 text-xs sm:text-sm max-h-[82vh] overflow-y-auto custom-scrollbar">
+        <input id="loanEditLogId" type="hidden" value="" />
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">作業類型 *</label>
+            <select id="loanType" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white font-semibold">
+              <option value="借出 (領取道具)">借出 (活動廠商領取道具)</option>
+              <option value="歸還 (道具回倉)">歸還 (活動廠商道具回倉)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">開門日期 *</label>
+            <input id="loanDate" type="date" required class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">現場開門時間 *</label>
+            <input id="loanOpenTime" type="time" required value="10:00" class="w-full p-2 border border-slate-300 rounded-lg bg-white" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">完畢鎖門時間 *</label>
+            <input id="loanCloseTime" type="time" required value="11:30" class="w-full p-2 border border-slate-300 rounded-lg bg-white" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">現場開關門專人 *</label>
+            <input id="loanStaff" type="text" required value="陳倉管 (專人開鎖/點交)" class="w-full p-2 border border-slate-300 rounded-lg bg-white" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">前往拿取/歸還之活動廠商 *</label>
+            <input id="loanVendorName" type="text" required placeholder="例如：卡爾吉特 / 活動協力商" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">廠商現場聯絡人 & 電話 *</label>
+            <input id="loanVendorContact" type="text" required placeholder="例如：林專案 0912-345-678" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">對應三星門市或活動專案名稱 *</label>
+          <input id="loanProjectEvent" type="text" required placeholder="例如：SES 高雄夢時代展店 / 微風南山體驗區" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+
+        <!-- 多品項動態新增與刪除管理區塊 -->
+        <div class="border border-emerald-200 rounded-xl overflow-hidden bg-emerald-50/30">
+          <div class="px-3.5 py-2.5 bg-emerald-100/70 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="font-bold text-emerald-950">本次點交道具明細清單 *</span>
+              <span id="loanItemsSummaryBadge" class="ml-2 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-700 text-white">共 1 項 / 1 件</span>
+            </div>
+            <button id="btnAddLoanItemRow" type="button" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition cursor-pointer">
+              + 新增一項點交道具
+            </button>
+          </div>
+
+          <div id="loanItemsContainer" class="p-3 space-y-2.5"></div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">預計歸還日期</label>
+            <input id="loanReturnDate" type="date" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">點交與門禁備註</label>
+            <input id="loanNote" type="text" placeholder="例如：3.5T貨車搬運、外觀完好" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button id="btnCancelLoan" type="button" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer">取消</button>
+          <button type="submit" class="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer">確認儲存並連動更新庫存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       MODAL 3: 單項盤點清點數量 & 拍照存證更新
+       ==================================================== -->
+  <div id="auditModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-xl overflow-hidden my-8">
+      <div class="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">現場盤點：清點數量 & 拍照存證</h3>
+        <button id="btnCloseAuditModal" type="button" class="text-slate-400 hover:text-white cursor-pointer text-lg leading-none">&times;</button>
+      </div>
+
+      <form id="auditForm" class="p-5 space-y-4 text-xs sm:text-sm">
+        <input id="auditInvId" type="hidden" />
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <div id="auditItemCode" class="font-mono text-xs font-bold text-blue-700"></div>
+          <div id="auditItemName" class="font-bold text-slate-900 mt-0.5"></div>
+          <div id="auditItemSpec" class="text-xs text-slate-500"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">現場實點總數量 *</label>
+            <input id="auditCountInput" type="number" min="0" required class="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-base text-blue-700" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">盤點外觀狀態</label>
+            <select id="auditConditionInput" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white">
+              <option value="全新待用">全新待用</option>
+              <option value="良好">良好</option>
+              <option value="輕微使用痕跡">輕微使用痕跡</option>
+              <option value="待維修整理">待維修整理</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">盤點現場照片 (提供三星報告使用)</label>
+          <div class="space-y-2">
+            <img id="auditPhotoPreview" src="" alt="盤點照片" class="w-full h-40 object-cover rounded-xl border border-slate-200 bg-slate-100" />
+            <label class="block w-full py-2 px-3 rounded-lg border border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-50 text-center text-xs font-semibold text-blue-700 cursor-pointer transition">
+              上傳新拍攝的道具照片
+              <input id="auditPhotoFile" type="file" accept="image/*" class="hidden" />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">盤點狀況說明 / 差異原因備註</label>
+          <textarea id="auditNoteInput" rows="2" class="w-full p-2.5 border border-slate-300 rounded-lg"></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button id="btnCancelAudit" type="button" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer">取消</button>
+          <button type="submit" class="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer">儲存盤點結果與照片</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       MODAL 4: 新增自訂產品品項至主檔
+       ==================================================== -->
+  <div id="customCatalogModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-xl overflow-hidden my-8">
+      <div class="px-5 py-4 bg-indigo-900 text-white flex items-center justify-between">
+        <h3 class="text-base font-bold">新增自訂產品品項至主檔</h3>
+        <button id="btnCloseCustomCatalogModal" type="button" class="text-indigo-200 hover:text-white cursor-pointer text-lg leading-none">&times;</button>
+      </div>
+      <form id="customCatalogForm" class="p-5 space-y-3.5 text-xs sm:text-sm">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">產品類別 *</label>
+          <input id="newCatCategory" type="text" required placeholder="例如：大型展示櫃體 / 維修與照明備品" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">產品名稱 *</label>
+          <input id="newCatName" type="text" required placeholder="例如：Galaxy S26 專屬展示架" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">規格 / 尺寸 *</label>
+            <input id="newCatSpec" type="text" required placeholder="w120 x h90 cm" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">單位 *</label>
+            <input id="newCatUnit" type="text" required value="組" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">交接時數量</label>
+          <input id="newCatQty" type="number" min="1" value="1" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">材質與備註說明</label>
+          <textarea id="newCatNote" rows="2" class="w-full p-2.5 border border-slate-300 rounded-lg"></textarea>
+        </div>
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button id="btnCancelCustomCatalog" type="button" class="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer">取消</button>
+          <button type="submit" class="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">儲存品項</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       MODAL 5: 預覽提交給三星之正式圖文盤點報告
+       ==================================================== -->
+  <div id="reportModal" class="hidden fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 shrink-0 no-print">
+        <div>
+          <h3 class="text-base font-bold">台灣三星電子 (Samsung) 通路倉庫定期盤點清冊暨照片存證報告</h3>
+          <p class="text-xs text-slate-400">
+            支援一鍵直接下載 A4 橫向 PDF 正式簽核報告或匯出 CSV 清冊
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnDownloadPdfReport" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span id="btnDownloadPdfText">直接下載 PDF 檔案</span>
+          </button>
+          <button id="btnPrintReport" type="button" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white cursor-pointer">
+            系統列印
+          </button>
+          <button id="btnExportCsvReport" type="button" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white cursor-pointer">
+            下載 CSV 報表
+          </button>
+          <button id="btnCloseReportModal" type="button" class="text-slate-400 hover:text-white cursor-pointer ml-2 text-lg leading-none">&times;</button>
+        </div>
+      </div>
+
+      <!-- PDF 轉檔與列印主內容區 -->
+      <div id="reportPrintableArea" class="p-6 overflow-y-auto space-y-4 text-xs sm:text-sm custom-scrollbar bg-white text-slate-900">
+        <!-- PDF 專用正式表頭 -->
+        <div class="border-b-2 border-slate-800 pb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <div class="text-xs font-bold text-blue-700 tracking-wider uppercase">SAMSUNG ELECTRONICS TAIWAN - WAREHOUSE AUDIT REPORT</div>
+            <h2 class="text-lg font-bold text-slate-900 mt-0.5">台灣三星電子 通路倉庫 (汐止倉) 定期盤點清冊暨照片存證報告</h2>
+            <p id="reportSubtitle" class="text-xs text-slate-600 mt-0.5">
+              盤點期別：2026-H2 (下半年定期盤點) | 倉庫地點：汐止倉 (約80坪，新北市汐止區橫科路407巷)
+            </p>
+          </div>
+          <div class="text-right text-xs text-slate-500">
+            <div>製表日期：<span id="reportGenDate"></span></div>
+            <div>管理單位：倉儲管理與活動道具維護組</div>
+          </div>
+        </div>
+
+        <div id="reportSummaryStats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-slate-100 border border-slate-200 text-center"></div>
+
+        <table class="w-full text-left border-collapse border border-slate-300">
+          <thead>
+            <tr class="bg-slate-100 text-slate-800 text-xs font-bold border-b border-slate-300">
+              <th class="p-2.5 border-r border-slate-300">實地盤點照片</th>
+              <th class="p-2.5 border-r border-slate-300">資產編號 / 儲位</th>
+              <th class="p-2.5 border-r border-slate-300">產品名稱 & 規格</th>
+              <th class="p-2.5 border-r border-slate-300 text-center">實點總數</th>
+              <th class="p-2.5 border-r border-slate-300 text-center">在庫 / 外借</th>
+              <th class="p-2.5">盤點結果與備註</th>
+            </tr>
+          </thead>
+          <tbody id="reportTableBody" class="divide-y divide-slate-300 text-xs"></tbody>
+        </table>
+
+        <!-- 底部簽核欄 -->
+        <div class="grid grid-cols-3 gap-4 pt-6 mt-4 border-t border-slate-200 text-xs text-slate-600">
+          <div class="border border-slate-300 rounded-lg p-3 h-20">
+            <div class="font-bold text-slate-800">倉庫管理專人簽章：</div>
+            <div class="text-[11px] text-slate-400 mt-1">清點數量與拍照存證確認</div>
+          </div>
+          <div class="border border-slate-300 rounded-lg p-3 h-20">
+            <div class="font-bold text-slate-800">專案負責主管複核：</div>
+            <div class="text-[11px] text-slate-400 mt-1">帳物相符與耗損檢核</div>
+          </div>
+          <div class="border border-slate-300 rounded-lg p-3 h-20">
+            <div class="font-bold text-slate-800">台灣三星電子 (Samsung) 查核簽收：</div>
+            <div class="text-[11px] text-slate-400 mt-1">定期盤點報告核備</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 單張照片放大檢視彈窗 -->
+  <div id="photoPreviewModal" class="hidden fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+      <img id="photoPreviewImg" src="" alt="預覽" class="w-full h-72 object-cover bg-slate-900" />
+      <div class="p-4 flex items-center justify-between">
+        <div>
+          <div id="photoPreviewCode" class="font-mono text-xs font-bold text-blue-600"></div>
+          <div id="photoPreviewTitle" class="font-bold text-slate-900"></div>
+          <div id="photoPreviewMeta" class="text-xs text-slate-500"></div>
+        </div>
+        <button id="btnClosePhotoPreview" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer">
+          關閉
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================
+       JavaScript + Firebase Firestore 完整邏輯
+       ==================================================== -->
+  <script>
+    // 1. Firebase 設定與初始化
+    const firebaseConfig = {
+      apiKey: "AIzaSyAyNXt7UlJnzNH09JOicb3unpWF30A-TgY",
+      authDomain: "k35-samsung-warehouse-manager.firebaseapp.com",
+      projectId: "k35-samsung-warehouse-manager",
+      storageBucket: "k35-samsung-warehouse-manager.firebasestorage.app",
+      messagingSenderId: "738631959463",
+      appId: "1:738631959463:web:1135ffd2956d5326776c82",
+      measurementId: "G-NGHMCPVFHZ"
+    };
+
+    let db = null;
+    let isFirestoreConnected = false;
+
+    // 2. 預設產生 SVG 縮圖 (確保即使無外網圖床也能顯示清晰存證圖卡)
+    function createSvgPhoto(title, code, zone, color = '#1e3a8a') {
+      const safeTitle = String(title || '').replace(/[<>&"']/g, '');
+      const safeCode = String(code || '').replace(/[<>&"']/g, '');
+      const safeZone = String(zone || '').replace(/[<>&"']/g, '');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="${color}"/>
+            <stop offset="100%" stop-color="#0f172a"/>
+          </linearGradient>
+        </defs>
+        <rect width="480" height="320" fill="url(#bg)" rx="12"/>
+        <rect x="20" y="20" width="440" height="280" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="6 4" rx="8"/>
+        <circle cx="240" cy="120" r="38" fill="rgba(255,255,255,0.12)"/>
+        <path d="M222 110 h36 v26 h-36 z M232 103 h16 v7 h-16 z" fill="#93c5fd"/>
+        <text x="240" y="195" font-family="sans-serif" font-size="17" font-weight="bold" fill="#ffffff" text-anchor="middle">${safeTitle}</text>
+        <text x="240" y="224" font-family="monospace" font-size="13" fill="#93c5fd" text-anchor="middle">資產編號: ${safeCode} | 儲位: ${safeZone}</text>
+        <rect x="145" y="244" width="190" height="26" rx="13" fill="rgba(16,185,129,0.25)"/>
+        <text x="240" y="261" font-family="sans-serif" font-size="12" fill="#6ee7b7" text-anchor="middle">汐止倉實地盤點拍照存證</text>
+      </svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    // 3. RFP 77 項標準產品品項主檔 (Catalog Master Data)
+    const INITIAL_CATALOG = [
+      { id: 'CAT-001', codePrefix: 'SES-CAB', category: '大型展示櫃體', name: '配件櫃(溝槽掛鉤)', spec: 'w91.5 x h220 x d51cm', unit: '座', rfpQty: 3, source: 'SES新莊宏匯 / SES高雄夢時代', note: '槽板白色美耐板(富美家C0459)+檯面板貼富美家1395NT塔希爾杉木(山)+下掀門+抽屜+4000K LED燈條+變壓器' },
+      { id: 'CAT-002', codePrefix: 'SES-CAB', category: '大型展示櫃體', name: '配件櫃(無溝槽版)', spec: 'w91.5 x h220 x d51cm', unit: '座', rfpQty: 3, source: 'SES新莊宏匯 / SES高雄夢時代', note: '牆面白色美耐板(富美家C0459)+鎖電視厚板檯面板貼1395NT+下掀門+抽屜+4000K LED燈條+變壓器' },
+      { id: 'CAT-003', codePrefix: 'SES-CAB', category: '大型展示櫃體', name: '配件櫃(SmartThings專區)', spec: 'w61 x d51 x h220cm', unit: '座', rfpQty: 3, source: 'SES新莊宏匯 / SES高雄夢時代', note: '牆面白色美耐板(C0459)+檯面板貼1395NT+下掀門+抽屜+4000K LED燈條+變壓器，桌面有mat孔洞' },
+      { id: 'CAT-004', codePrefix: 'SES-CAB', category: '大型展示櫃體', name: '服務櫃台(含排風扇1顆)', spec: 'w300 x h110 x d100cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯 / SES高雄夢時代', note: '木作櫃體貼富美家0909D8正黑+CR0909彩虹心，檯面黑色線槽毛刷、內插座3組、肚臍鎖+3000K LED燈條+排風扇' },
+      { id: 'CAT-005', codePrefix: 'SES-TAB', category: '大型展示櫃體', name: '中島展示桌(6格)下方雙面陳列', spec: 'w180 x h90 x d90cm', unit: '組', rfpQty: 2, source: 'SES新莊宏匯 / SES高雄夢時代', note: '檯面白色美耐板(C0459)+溝槽2.5cm(白色毛刷)+桌面2cm線孔蓋*4+內崁4000K LED燈條+雙面抽屜箱體' },
+      { id: 'CAT-006', codePrefix: 'SES-HRD', category: '櫃體配件/五金', name: '中島展示桌-下陳列縱柱掛勾橫桿(8支/座)', spec: '按圖施作/正白色烤漆', unit: '支', rfpQty: 16, source: 'SES新莊宏匯 / SES高雄夢時代', note: '黑鐵烤漆，收邊蓋大白壓克力' },
+      { id: 'CAT-007', codePrefix: 'SES-TAB', category: '大型展示櫃體', name: '中島櫃(6格)(沿用京站/南港citylink下招)', spec: 'W185 x H90 x D100cm', unit: '組', rfpQty: 2, source: 'SES新莊宏匯 / SES高雄夢時代', note: '檯面白色美耐板(C0459)+溝槽2.5cm(黑色毛刷)+桌面線孔蓋*2+下方收納櫃門片+活動層板（倉庫沿用櫃體）' },
+      { id: 'CAT-008', codePrefix: 'SES-TAB', category: '大型展示櫃體', name: 'U型桌-三品', spec: 'w200 x h500 x d90cm', unit: '座', rfpQty: 2, source: 'SES新莊宏匯 / SES高雄夢時代', note: '檯面白色美耐板(C0459)，插座*4，側邊黑色美耐板(CR0909)+櫃內白波麗板' },
+      { id: 'CAT-009', codePrefix: 'SES-TAB', category: '大型展示櫃體', name: 'U型桌-二品', spec: 'w87 x h500 x d90cm', unit: '座', rfpQty: 8, source: 'SES新莊宏匯 / SES高雄夢時代', note: '檯面白色美耐板(C0459)，插座*2，側邊黑色美耐板(CR0909)+櫃內白波麗板' },
+      { id: 'CAT-010', codePrefix: 'SES-TAB', category: '大型展示櫃體', name: '交機桌', spec: 'w130 x d80 x h90cm', unit: '座', rfpQty: 2, source: 'SES新莊宏匯 / SES高雄夢時代', note: '桌面白色美耐板(C0459)+側邊黑色美耐板(CR0909)+(黑色毛刷)+桌身黑色噴漆' },
+      { id: 'CAT-011', codePrefix: 'SES-LGT', category: '燈箱與結構道具', name: '入口左右側斜面燈箱木作結構(含內崁LFD面)', spec: 'w126.5 x d65 x h410cm', unit: '式', rfpQty: 2, source: 'SES新莊宏匯 / SES高雄夢時代', note: '內側加厚板製作方便吊掛TV，裸板+雙孔插座蓋板' },
+      { id: 'CAT-012', codePrefix: 'SES-LGT', category: '燈箱與結構道具', name: '主形象牆後方燈箱框體', spec: 'w460 x h270 x d8cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯', note: '後方燈箱木作框體內貼白波麗' },
+      { id: 'CAT-013', codePrefix: 'SES-LGT', category: '燈箱與結構道具', name: '主形象牆後方燈布(含鋁框)', spec: 'w453.3 x h263.3cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯', note: '美工工程燈布含鋁框' },
+      { id: 'CAT-014', codePrefix: 'SES-STR', category: '燈箱與結構道具', name: '主形象牆右側門片', spec: 'w200 x h90cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯', note: '門片+一般五金絞鍊+水平把手鎖' },
+      { id: 'CAT-015', codePrefix: 'SES-SIG', category: '展示架/看板設備', name: '落地式電子看板鐵架(使用中和永和下招)', spec: 'w73 x h184 x d40cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯', note: '原中和永和下招回收鐵架整理' },
+      { id: 'CAT-016', codePrefix: 'SES-FUR', category: '家具類', name: '櫃檯高吧椅', spec: 'w45 x h70 x d44.5cm', unit: '張', rfpQty: 4, source: 'SES新莊宏匯 / SES高雄夢時代', note: '服務櫃檯區使用' },
+      { id: 'CAT-017', codePrefix: 'SES-FUR', category: '家具類', name: '新制交機椅(黑色坐墊+椅背)', spec: 'w40 x h58 x d30cm', unit: '張', rfpQty: 8, source: 'SES新莊宏匯 / SES高雄夢時代', note: '交機區使用（另有木工廠移回汐止倉之灰色靠背交機椅）' },
+      { id: 'CAT-018', codePrefix: 'SES-FUR', category: '家具類', name: '圓筒型交機椅', spec: 'Φ23 x h46cm', unit: '張', rfpQty: 9, source: 'SES新莊宏匯 / SES高雄夢時代', note: '不拆式椅套(藍色)+高密度泡綿（使用汐止倉庫現有圓筒型交機椅）' },
+      { id: 'CAT-019', codePrefix: 'SES-FUR', category: '家具配件', name: '圓筒型交機椅-可拆式椅套', spec: 'Φ23 x h46cm (深灰Nai Mi 999-798)', unit: '張', rfpQty: 9, source: 'SES新莊宏匯 / SES高雄夢時代', note: '可拆式椅套(深灰色)+高密度泡綿' },
+      { id: 'CAT-020', codePrefix: 'SES-HRD', category: '五金與線材備品', name: '配件櫃-槽板掛勾', spec: '電鍍銀 (一排7支/一櫃21支)', unit: '支', rfpQty: 70, source: 'SES新莊宏匯 / SES高雄夢時代', note: '63支+7支備品共70支' },
+      { id: 'CAT-021', codePrefix: 'SES-HRD', category: '五金與線材備品', name: '中島展示桌(6格)雙面陳列-槽板掛勾', spec: '一排10支，一桌4排/40支', unit: '支', rfpQty: 160, source: 'SES新莊宏匯 / SES高雄夢時代', note: '由Cheil採購提供' },
+      { id: 'CAT-022', codePrefix: 'SES-3C', category: '3C與機電配件', name: '電視用USB隨身碟', spec: '電視播放用', unit: '只', rfpQty: 4, source: 'SES新莊宏匯', note: '交機區電視x2 / SmartThings電視x1 / Signage電視x1用' },
+      { id: 'CAT-023', codePrefix: 'SES-3C', category: '3C與機電配件', name: '電視用USB延長線', spec: '電視連接用', unit: '只', rfpQty: 4, source: 'SES新莊宏匯', note: '交機區電視x2 / SmartThings電視x1 / Signage電視x1用' },
+      { id: 'CAT-024', codePrefix: 'SES-3C', category: '3C與機電配件', name: 'Wifi接收器', spec: '門市無線網路設備', unit: '式', rfpQty: 1, source: 'SES新莊宏匯 / SES高雄夢時代', note: '門市網路接收設備' },
+      { id: 'CAT-025', codePrefix: 'SES-HRD', category: '五金與線材備品', name: '桌角防撞墊', spec: '防護五金', unit: '式', rfpQty: 1, source: 'SES新莊宏匯', note: '展示桌防撞保護' },
+      { id: 'CAT-026', codePrefix: 'SES-ACR', category: '壓克力與陳列道具', name: 'SmartThings-黑色SmartThings立體文字', spec: '專區標準字', unit: '式', rfpQty: 1, source: 'SES新莊宏匯 / SES高雄夢時代', note: '由Cheil提供' },
+      { id: 'CAT-027', codePrefix: 'SES-ACR', category: '壓克力與陳列道具', name: 'SmartThings-霧白壓克力桌板(大)', spec: 'w174.5 x h35 x 厚度1.5cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯 / SES高雄夢時代', note: '大白壓克力5mm疊加，壓克力洗防盜洞孔/走線槽' },
+      { id: 'CAT-028', codePrefix: 'SES-ACR', category: '壓克力與陳列道具', name: 'SmartThings-霧白壓克力桌板(小)', spec: 'w83 x h35 x 厚度1.5cm', unit: '組', rfpQty: 1, source: 'SES新莊宏匯 / SES高雄夢時代', note: '大白壓克力5mm疊加，壓克力洗防盜洞孔/走線槽' },
+      { id: 'CAT-029', codePrefix: 'SES-PKG', category: '包材與耗材', name: '電視/LFD/Flip原廠紙箱', spec: '設備保護紙箱', unit: '批', rfpQty: 1, source: 'SES新莊宏匯(回汐止倉)', note: '報價單載明「電視/LFD/Flip紙箱回汐止倉」保管備用' },
+      { id: 'CAT-030', codePrefix: 'STS-WAL', category: 'STS壁櫃型道具', name: 'STS壁櫃-牆面美耐板結構', spec: 'w180 x h220 x d30cm', unit: '組', rfpQty: 3, source: '2.STS壁櫃型', note: '富美家透心美耐板(CR0909黑色)+燈箱電源出線' },
+      { id: 'CAT-031', codePrefix: 'STS-WAL', category: 'STS壁櫃型道具', name: 'STS壁櫃牆-LED燈條+框體', spec: '尺寸參考圖面', unit: '組', rfpQty: 3, source: '2.STS壁櫃型', note: '框體+LED燈條+變壓器+調光器' },
+      { id: 'CAT-032', codePrefix: 'STS-WAL', category: 'STS壁櫃型道具', name: 'STS壁櫃-實展桌展板', spec: 'w180 x h12 x d35cm', unit: '組', rfpQty: 3, source: '2.STS壁櫃型', note: '溝槽2.5cm(黑色毛刷)+電源出線' },
+      { id: 'CAT-033', codePrefix: 'STS-ISL', category: 'STS中島型道具', name: 'STS中桌', spec: 'w180 x h90 x d90cm', unit: '座', rfpQty: 3, source: '3.STS中島型', note: '木作桌面+美耐板(6510T白)+黑色毛刷蓋+桌邊美耐板(6150T板岩黑)+桌腳鐵件烤漆+燈箱LOGO*2 side' },
+      { id: 'CAT-034', codePrefix: 'MNT-LGT', category: '維修與照明備品', name: '招牌LED燈條(6000K)', spec: '燈字高H44cm用 / 6000K', unit: '批', rfpQty: 10, source: '4.日常維護', note: 'SES招牌維修更換光源備品' },
+      { id: 'CAT-035', codePrefix: 'MNT-LGT', category: '維修與照明備品', name: '歐司朗LED燈條(4000K)', spec: '燈箱尺寸W90xH180cm用 / 4000K', unit: '批', rfpQty: 10, source: '4.日常維護', note: 'SES燈箱LED維修備品' },
+      { id: 'CAT-036', codePrefix: 'MNT-ELE', category: '維修與照明備品', name: '三切開關面板', spec: '110V', unit: '個', rfpQty: 15, source: '4.日常維護', note: '燈箱與門市照明維修備品' },
+      { id: 'CAT-037', codePrefix: 'MNT-ELE', category: '維修與照明備品', name: '燈箱變壓器(150W)', spec: '150W', unit: '顆', rfpQty: 15, source: '4.日常維護', note: '燈箱LED維修備品' },
+      { id: 'CAT-038', codePrefix: 'MNT-MAT', category: '維修與陳列備品', name: 'STS防焰地毯', spec: 'W200 x D110cm', unit: '張', rfpQty: 5, source: '4.日常維護', note: 'STS門市地毯換新備品' },
+      { id: 'CAT-039', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: '星際隧道-圓形展桌', spec: 'SESL體驗區專用', unit: '式', rfpQty: 3, source: '5.SESL微風南山體驗區', note: '體驗區結構展桌' },
+      { id: 'CAT-040', codePrefix: 'SESL-FUR', category: '體驗區展台/家具', name: '星際隧道-體驗區椅子', spec: '重新貼波音軟片', unit: '張', rfpQty: 8, source: '5.SESL微風南山體驗區', note: '原有椅子貼皮翻新使用' },
+      { id: 'CAT-041', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'B8太空穿衣間-手機展台', spec: '使用原有展台', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '備註載明「使用原有展台」（倉庫調撥）' },
+      { id: 'CAT-042', codePrefix: 'SESL-ACR', category: '體驗區展台/家具', name: 'B8面-壓克力圓罩', spec: '含Galaxy Z Flip8卡典字', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '結構工程展具' },
+      { id: 'CAT-043', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'Q8太空艙-左邊斜桌面展台(下暈光)', spec: 'SESL體驗區專用', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '體驗區主題展台' },
+      { id: 'CAT-044', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'Q8太空艙-正面展桌(下開門暈光)', spec: 'SESL體驗區專用', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '體驗區主題展桌' },
+      { id: 'CAT-045', codePrefix: 'SESL-STR', category: '體驗區展台/家具', name: 'H8啟動室-LED壁掛箱體結構', spec: 'W319 x H223 x D10cm', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '大型壁掛箱體結構' },
+      { id: 'CAT-046', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'H8啟動室-音響小展台', spec: 'SESL體驗區專用', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '音響陳列小展台' },
+      { id: 'CAT-047', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'H8啟動室-壓克力圓形展台', spec: 'SESL體驗區專用', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '壓克力圓形展台' },
+      { id: 'CAT-048', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: 'H8啟動室-手機小展桌', spec: 'SESL體驗區專用', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '手機陳列小展桌' },
+      { id: 'CAT-049', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: '服務工作站-L服務台', spec: 'SESL體驗區專用', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '服務工作站主台' },
+      { id: 'CAT-050', codePrefix: 'SESL-CAB', category: '體驗區展台/家具', name: '服務工作站-後方工作櫃', spec: 'w210 x d60 x H100cm', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '後方收納工作櫃' },
+      { id: 'CAT-051', codePrefix: 'SESL-TAB', category: '體驗區展台/家具', name: '中島橢圓桌', spec: 'L500 x H90cm', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '美工工程提及台身包覆輸出之原有中島橢圓桌' },
+      { id: 'CAT-052', codePrefix: 'SESL-NEO', category: '體驗區霓虹燈字', name: 'A面霓虹燈字-Galaxy Interstellar Lab', spec: '含壓克力', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '招牌工程霓虹燈字' },
+      { id: 'CAT-053', codePrefix: 'SESL-NEO', category: '體驗區霓虹燈字', name: 'A面霓虹燈圖-人打手機', spec: '原圖像霓虹送回工廠切割再到現場', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '既有霓虹燈圖修改重用' },
+      { id: 'CAT-054', codePrefix: 'SESL-NEO', category: '體驗區霓虹燈字', name: 'B8區霓虹字-Vibe-Maxxing', spec: '含壓克力', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '招牌工程霓虹燈字' },
+      { id: 'CAT-055', codePrefix: 'SESL-NEO', category: '體驗區霓虹燈字', name: 'H8區霓虹字-Joy-Maxxing', spec: '含壓克力', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '招牌工程霓虹燈字' },
+      { id: 'CAT-056', codePrefix: 'SESL-NEO', category: '體驗區霓虹燈字', name: '服務站區霓虹燈字-Galaxy Spaceport', spec: '含壓克力', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '招牌工程霓虹燈字' },
+      { id: 'CAT-057', codePrefix: 'SESL-LGT', category: '體驗區燈光機電', name: '跑馬燈設備', spec: '現場尺寸採購', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '天花橫梁外圍內藏跑馬燈' },
+      { id: 'CAT-058', codePrefix: 'SESL-LGT', category: '體驗區燈光機電', name: '全區FCOB燈條', spec: '結構燈條', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '結構燈條工程' },
+      { id: 'CAT-059', codePrefix: 'SESL-ELE', category: '體驗區燈光機電', name: '變壓器(大)', spec: '結構燈條用', unit: '台', rfpQty: 18, source: '5.SESL微風南山體驗區', note: '結構燈條工程' },
+      { id: 'CAT-060', codePrefix: 'SESL-ELE', category: '體驗區燈光機電', name: '變壓器(小)', spec: '結構燈條用', unit: '式', rfpQty: 5, source: '5.SESL微風南山體驗區', note: '結構燈條工程' },
+      { id: 'CAT-061', codePrefix: 'SESL-ELE', category: '體驗區燈光機電', name: '品型開關箱', spec: '電力照明買斷', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '電力照明工程(買斷)' },
+      { id: 'CAT-062', codePrefix: 'SESL-ELE', category: '體驗區燈光機電', name: '排插', spec: '電力照明買斷', unit: '式', rfpQty: 4, source: '5.SESL微風南山體驗區', note: '電力照明工程(買斷)' },
+      { id: 'CAT-063', codePrefix: 'SESL-LGT', category: '體驗區燈光機電', name: '白色軌道(燈軌)', spec: '電力照明買斷', unit: '支', rfpQty: 20, source: '5.SESL微風南山體驗區', note: '電力照明工程(買斷)' },
+      { id: 'CAT-064', codePrefix: 'SESL-LGT', category: '體驗區燈光機電', name: '軌道燈具', spec: '使用原有軌道燈具', unit: '盞', rfpQty: 60, source: '5.SESL微風南山體驗區', note: '備註載明「使用原有軌道燈具」（倉庫調撥）' },
+      { id: 'CAT-065', codePrefix: 'SESL-PRP', category: '體驗區小型道具', name: 'B8區牆上安全鏡+加工壓克力框', spec: '小型道具製作', unit: '式', rfpQty: 8, source: '5.SESL微風南山體驗區', note: '小型道具' },
+      { id: 'CAT-066', codePrefix: 'SESL-PRP', category: '體驗區小型道具', name: 'B8區壓克力座(粉紅透明)', spec: '小型道具製作', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '小型道具' },
+      { id: 'CAT-067', codePrefix: 'SESL-PRP', category: '體驗區小型道具', name: 'Q8區平板上壓克力框+五金', spec: '小型道具製作', unit: '式', rfpQty: 4, source: '5.SESL微風南山體驗區', note: '小型道具' },
+      { id: 'CAT-068', codePrefix: 'SESL-PRP', category: '體驗區小型道具', name: '服務站-光罩壓克力+鐵件+霓虹燈條', spec: '小型道具製作', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '小型道具' },
+      { id: 'CAT-069', codePrefix: 'SESL-PRP', category: '體驗區小型道具', name: '服務站-取票機壓克力座', spec: '小型道具製作', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '小型道具' },
+      { id: 'CAT-070', codePrefix: 'SESL-PRP', category: '體驗區布置採購', name: 'B8區桌上手機拍照架+磁吸環貼', spec: '需搭配透明背蓋', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '布置物採購（請三星準備透明背蓋）' },
+      { id: 'CAT-071', codePrefix: 'SESL-FUR', category: '體驗區布置採購', name: '控台區長桌', spec: '控台設備桌', unit: '式', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '布置物採購' },
+      { id: 'CAT-072', codePrefix: 'SESL-CAB', category: '體驗區布置採購', name: '控台區電箱置物櫃(開放)', spec: '控台收納櫃', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '布置物採購' },
+      { id: 'CAT-073', codePrefix: 'TV-LFD', category: '電視與播放設備', name: '85吋LFD大型商用顯示器', spec: '橫式/直式壁掛 (B面外牆x1、B8區x1)', unit: '台', rfpQty: 2, source: '5.SESL微風南山體驗區', note: '螢幕設備由三星提供，代裝列管' },
+      { id: 'CAT-074', codePrefix: 'TV-DSP', category: '電視與播放設備', name: '65吋電視', spec: '直式壁掛 (服務台x1)', unit: '台', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '螢幕設備由三星提供，代裝列管' },
+      { id: 'CAT-075', codePrefix: 'TV-DSP', category: '電視與播放設備', name: '55吋電視', spec: '直式壁掛x2(Q8/服務台)、橫式天吊斜掛x2(Q8)', unit: '台', rfpQty: 4, source: '5.SESL微風南山體驗區', note: '螢幕設備由三星提供，代裝列管' },
+      { id: 'CAT-076', codePrefix: 'TV-PLY', category: '電視與播放設備', name: 'Q8雙電視後方整合器及播放設備', spec: '租賃/整合設備', unit: '式', rfpQty: 1, source: '5.SESL微風南山體驗區', note: '代裝電視工程（租賃列管）' },
+      { id: 'CAT-077', codePrefix: 'HQ-SIG', category: 'HQ進口招牌設備', name: 'Samsung Signage (韓國進口燈字)', spec: 'H35cm', unit: '組', rfpQty: 1, source: '公版_HQ廠商採購', note: '韓國進口燈字 (USD 1,802/組)' }
+    ];
+
+    // 4. 初始前台庫存資料 (由產品清單建入之範例資產)
+    const INITIAL_INVENTORY = [
+      {
+        invId: 'INV-101',
+        catalogId: 'CAT-007',
+        assetCode: 'SAM-CAB-2026-001',
+        name: '中島櫃(6格)(沿用京站/南港citylink下招)',
+        category: '大型展示櫃體',
+        spec: 'W185 x H90 x D100cm',
+        unit: '組',
+        totalQty: 2,
+        availableQty: 2,
+        borrowedQty: 0,
+        zone: 'A區-重型櫃體區-01',
+        condition: '良好',
+        lastAuditDate: '2026-10-15',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('中島櫃(6格) 沿用下招', 'SAM-CAB-2026-001', 'A區-01', '#1e40af'),
+        note: '由京站/南港Citylink撤場移入汐止倉，毛刷已改黑色'
+      },
+      {
+        invId: 'INV-102',
+        catalogId: 'CAT-018',
+        assetCode: 'SAM-FUR-2026-001',
+        name: '圓筒型交機椅',
+        category: '家具類',
+        spec: 'Φ23 x h46cm',
+        unit: '張',
+        totalQty: 9,
+        availableQty: 5,
+        borrowedQty: 4,
+        zone: 'B區-家具陳列區-03',
+        condition: '良好',
+        lastAuditDate: '2026-10-15',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('圓筒型交機椅 (藍/深灰椅套)', 'SAM-FUR-2026-001', 'B區-03', '#0f766e'),
+        note: '汐止倉現有庫存，其中4張借出予新莊宏匯門市活動使用'
+      },
+      {
+        invId: 'INV-103',
+        catalogId: 'CAT-015',
+        assetCode: 'SAM-SIG-2026-001',
+        name: '落地式電子看板鐵架(使用中和永和下招)',
+        category: '展示架/看板設備',
+        spec: 'w73 x h184 x d40cm',
+        unit: '組',
+        totalQty: 1,
+        availableQty: 1,
+        borrowedQty: 0,
+        zone: 'A區-重型櫃體區-04',
+        condition: '良好',
+        lastAuditDate: '2026-10-16',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('落地式電子看板鐵架', 'SAM-SIG-2026-001', 'A區-04', '#3730a3'),
+        note: '中和永和下招回收鐵架，已完成基本清潔擦拭'
+      },
+      {
+        invId: 'INV-104',
+        catalogId: 'CAT-041',
+        assetCode: 'SAM-SESL-2026-001',
+        name: 'B8太空穿衣間-手機展台',
+        category: '體驗區展台/家具',
+        spec: '使用原有展台',
+        unit: '式',
+        totalQty: 2,
+        availableQty: 0,
+        borrowedQty: 2,
+        zone: 'C區-體驗區道具-02',
+        condition: '良好',
+        lastAuditDate: '2026-10-16',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('B8太空穿衣間-手機展台', 'SAM-SESL-2026-001', 'C區-02', '#6d28d9'),
+        note: '倉庫原有展台，目前調撥至微風南山SESL體驗區'
+      },
+      {
+        invId: 'INV-105',
+        catalogId: 'CAT-064',
+        assetCode: 'SAM-LGT-2026-001',
+        name: '軌道燈具',
+        category: '體驗區燈光機電',
+        spec: '使用原有軌道燈具',
+        unit: '盞',
+        totalQty: 60,
+        availableQty: 40,
+        borrowedQty: 20,
+        zone: 'D區-五金機電區-01',
+        condition: '良好',
+        lastAuditDate: '2026-10-16',
+        auditStatus: '盤點有差異',
+        photoUrl: createSvgPhoto('體驗區原有軌道燈具 (60盞)', 'SAM-LGT-2026-001', 'D區-01', '#b45309'),
+        note: '其中2盞燈泡需檢修，20盞外借活動中'
+      },
+      {
+        invId: 'INV-106',
+        catalogId: 'CAT-029',
+        assetCode: 'SAM-PKG-2026-001',
+        name: '電視/LFD/Flip原廠紙箱',
+        category: '包材與耗材',
+        spec: '85吋/65吋/55吋設備保護紙箱',
+        unit: '批',
+        totalQty: 1,
+        availableQty: 1,
+        borrowedQty: 0,
+        zone: 'E區-包材備品區-01',
+        condition: '良好',
+        lastAuditDate: '2026-10-17',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('電視/LFD/Flip原廠紙箱', 'SAM-PKG-2026-001', 'E區-01', '#334155'),
+        note: '台北門市撤回汐止倉庫專區存放'
+      },
+      {
+        invId: 'INV-107',
+        catalogId: 'CAT-077',
+        assetCode: 'SAM-HQ-2026-001',
+        name: 'Samsung Signage (韓國進口燈字)',
+        category: 'HQ進口招牌設備',
+        spec: 'H35cm',
+        unit: '組',
+        totalQty: 1,
+        availableQty: 1,
+        borrowedQty: 0,
+        zone: 'D區-五金機電區-05',
+        condition: '全新待用',
+        lastAuditDate: '2026-10-17',
+        auditStatus: '已盤點相符',
+        photoUrl: createSvgPhoto('Samsung Signage 韓國進口燈字', 'SAM-HQ-2026-001', 'D區-05', '#1d4ed8'),
+        note: '韓國HQ進口燈字，高單價資產重點列管 (USD 1,802)'
+      }
+    ];
+
+    // 5. 初始專人開關門與廠商借還紀錄 (支援單筆紀錄包含多項道具 items 陣列)
+    const INITIAL_LOGS = [
+      {
+        logId: 'LOG-20261014-01',
+        type: '借出 (領取道具)',
+        date: '2026-10-14',
+        doorOpenTime: '09:30',
+        doorCloseTime: '11:00',
+        vendorName: '卡爾吉特 / 活動執行組',
+        vendorContact: '林專案 (0912-345-678)',
+        projectEvent: 'SESL 微風南山體驗區進場調撥',
+        keyHolderStaff: '陳倉管 (專人開鎖/點交)',
+        items: [
+          {
+            invId: 'INV-104',
+            assetCode: 'SAM-SESL-2026-001',
+            itemName: 'B8太空穿衣間-手機展台',
+            unit: '式',
+            qty: 2
+          },
+          {
+            invId: 'INV-105',
+            assetCode: 'SAM-LGT-2026-001',
+            itemName: '軌道燈具',
+            unit: '盞',
+            qty: 20
+          }
+        ],
+        totalQty: 22,
+        status: '借出中',
+        expectedReturnDate: '2026-11-15',
+        note: '現場已核對手機展台2式與軌道燈具20盞外觀無損，專人陪同開門搬運上3.5T貨車'
+      },
+      {
+        logId: 'LOG-20261015-02',
+        type: '借出 (領取道具)',
+        date: '2026-10-15',
+        doorOpenTime: '14:00',
+        doorCloseTime: '15:20',
+        vendorName: '木作與家具工程協力廠',
+        vendorContact: '王師傅 (0928-888-168)',
+        projectEvent: 'SESP 新莊宏匯門市改裝支援',
+        keyHolderStaff: '張專員 (專人開鎖/點交)',
+        items: [
+          {
+            invId: 'INV-102',
+            assetCode: 'SAM-FUR-2026-001',
+            itemName: '圓筒型交機椅',
+            unit: '張',
+            qty: 4
+          }
+        ],
+        totalQty: 4,
+        status: '借出中',
+        expectedReturnDate: '2026-10-28',
+        note: '由汐止倉領取送往家具工廠換裝深灰色可拆式椅套後進場新莊宏匯'
+      },
+      {
+        logId: 'LOG-20261016-03',
+        type: '歸還 (道具回倉)',
+        date: '2026-10-16',
+        doorOpenTime: '16:30',
+        doorCloseTime: '17:45',
+        vendorName: '北區活動公關廠商',
+        vendorContact: '吳經理 (0933-112-233)',
+        projectEvent: '台北門市快閃展示撤場歸還',
+        keyHolderStaff: '陳倉管 (專人開鎖/點交)',
+        items: [
+          {
+            invId: 'INV-106',
+            assetCode: 'SAM-PKG-2026-001',
+            itemName: '電視/LFD/Flip原廠紙箱',
+            unit: '批',
+            qty: 1
+          }
+        ],
+        totalQty: 1,
+        status: '已結案歸還',
+        expectedReturnDate: '2026-10-16',
+        note: '3.5T貨車運回汐止倉，清點紙箱與緩衝材完整無受潮，上鎖離場'
+      }
+    ];
+
+    // 6. 應用程式全域狀態
+    let state = {
+      activeTab: 'inventory',
+      auditCycleFreq: 'biannual',
+      selectedAuditPeriod: '2026-H2 (下半年定期盤點)',
+      catalog: [...INITIAL_CATALOG],
+      inventory: [...INITIAL_INVENTORY],
+      accessLogs: [...INITIAL_LOGS],
+      invSearch: '',
+      invCategoryFilter: '全部',
+      invZoneFilter: '全部',
+      catSearch: '',
+      catCategoryFilter: '全部',
+      logSearch: '',
+      logTypeFilter: '全部',
+      tempEnrollPhoto: '',
+      tempAuditPhoto: '',
+      loanDraftItems: [] // 借還登記視窗內的動態多品項清單
+    };
+
+    // 輔助函式：相容舊版單品項紀錄與新版多品項陣列紀錄
+    function getNormalizedLogItems(log) {
+      if (Array.isArray(log.items) && log.items.length > 0) {
+        return log.items.map(it => {
+          const invObj = state.inventory.find(i => i.invId === it.invId);
+          return {
+            invId: it.invId,
+            assetCode: it.assetCode || (invObj ? invObj.assetCode : ''),
+            itemName: it.itemName || (invObj ? invObj.name : ''),
+            unit: it.unit || (invObj ? invObj.unit : '件'),
+            qty: Number(it.qty) || 1
+          };
+        });
+      }
+      if (log.invId || log.itemName) {
+        const invObj = state.inventory.find(i => i.invId === log.invId);
+        return [
+          {
+            invId: log.invId || '',
+            assetCode: log.assetCode || (invObj ? invObj.assetCode : ''),
+            itemName: log.itemName || (invObj ? invObj.name : ''),
+            unit: invObj ? invObj.unit : '件',
+            qty: Number(log.qty) || 1
+          }
+        ];
+      }
+      return [];
+    }
+
+    // 7. 工具函式：HTML 跳脫與 Toast 通知
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const borderColor = type === 'error' ? 'border-amber-500' : 'border-emerald-500';
+      const dotColor = type === 'error' ? 'bg-amber-400' : 'bg-emerald-400';
+      toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border ${borderColor} bg-slate-900 text-white text-xs sm:text-sm font-medium transition-all`;
+      toast.innerHTML = `<span class="w-2.5 h-2.5 rounded-full ${dotColor} shrink-0"></span><span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.remove();
+      }, 3600);
+    }
+
+    // 壓縮上傳圖片為小尺寸 Base64 Data URL，確保符合 Firestore 單一文件 1MB 限制
+    function compressImageFile(file, callback) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const maxW = 640;
+          const maxH = 440;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxW) {
+            h = Math.round((h * maxW) / w);
+            w = maxW;
+          }
+          if (h > maxH) {
+            w = Math.round((w * maxH) / h);
+            h = maxH;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+          callback(dataUrl);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 8. 初始化 Firebase Firestore 與即時監聽 (onSnapshot)
+    function initFirebase() {
+      const badge = document.getElementById('firebaseStatusBadge');
+      const dot = document.getElementById('firebaseStatusDot');
+      const text = document.getElementById('firebaseStatusText');
+
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+
+        // 監聽前台庫存 `inventory` 集合
+        db.collection('inventory').onSnapshot(
+          snapshot => {
+            isFirestoreConnected = true;
+            badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+            dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+            text.textContent = 'Firestore 雲端即時同步中 (k35-samsung-warehouse-manager)';
+
+            if (snapshot.empty) {
+              // 若雲端尚無資料，自動將初始 7 筆庫存寫入 Firestore
+              seedFirestoreData(false);
+            } else {
+              const items = [];
+              snapshot.forEach(doc => items.push(doc.data()));
+              items.sort((a, b) => String(b.invId).localeCompare(String(a.invId)));
+              state.inventory = items;
+              renderAll();
+            }
+          },
+          err => {
+            console.warn('Firestore inventory listener warning:', err);
+            badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-400/30';
+            dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+            text.textContent = '本機快取模式 (請確認 Firestore Rules 權限)';
+          }
+        );
+
+        // 監聽開關門借還紀錄 `access_logs` 集合
+        db.collection('access_logs').onSnapshot(
+          snapshot => {
+            if (!snapshot.empty) {
+              const logs = [];
+              snapshot.forEach(doc => logs.push(doc.data()));
+              logs.sort((a, b) => String(b.logId).localeCompare(String(a.logId)));
+              state.accessLogs = logs;
+              renderAll();
+            }
+          },
+          err => console.warn('Firestore access_logs listener warning:', err)
+        );
+
+        // 監聽自訂新增的產品主檔 `catalog_custom` 集合
+        db.collection('catalog_custom').onSnapshot(
+          snapshot => {
+            if (!snapshot.empty) {
+              const customCats = [];
+              snapshot.forEach(doc => customCats.push(doc.data()));
+              const existingIds = new Set(INITIAL_CATALOG.map(c => c.id));
+              const merged = [...INITIAL_CATALOG];
+              customCats.forEach(c => {
+                if (!existingIds.has(c.id)) merged.push(c);
+              });
+              state.catalog = merged;
+              renderAll();
+            }
+          },
+          err => console.warn('Firestore catalog_custom listener warning:', err)
+        );
+      } catch (e) {
+        console.error('Firebase init error:', e);
+        text.textContent = '本機運作模式';
+      }
+    }
+
+    // 將預設庫存與借還紀錄批次寫入 Firestore
+    async function seedFirestoreData(showNotification = true) {
+      if (!db) {
+        showToast('目前處於離線模式，已重置本機資料', 'error');
+        return;
+      }
+      try {
+        const batch = db.batch();
+        INITIAL_INVENTORY.forEach(item => {
+          const ref = db.collection('inventory').doc(item.invId);
+          batch.set(ref, item, { merge: true });
+        });
+        INITIAL_LOGS.forEach(log => {
+          const ref = db.collection('access_logs').doc(log.logId);
+          batch.set(ref, log, { merge: true });
+        });
+        await batch.commit();
+        if (showNotification) {
+          showToast('已成功將範例庫存與借還紀錄同步寫入 Firebase Firestore！');
+        }
+      } catch (err) {
+        console.error('Firestore seed error:', err);
+        if (showNotification) {
+          showToast('寫入 Firestore 失敗，請確認 Firestore Rules 是否開放讀寫：' + err.message, 'error');
+        }
+      }
+    }
+
+    // 9. 更新下拉篩選選單與渲染畫面
+    function populateFilterSelects() {
+      // 類別選單
+      const categories = ['全部', ...new Set(state.catalog.map(c => c.category))];
+      const invCatSel = document.getElementById('invCategorySelect');
+      const catCatSel = document.getElementById('catCategorySelect');
+      invCatSel.innerHTML = categories.map(c => `<option value="${escapeHtml(c)}" ${state.invCategoryFilter === c ? 'selected' : ''}>類別：${escapeHtml(c)}</option>`).join('');
+      catCatSel.innerHTML = categories.map(c => `<option value="${escapeHtml(c)}" ${state.catCategoryFilter === c ? 'selected' : ''}>產品類別：${escapeHtml(c)}</option>`).join('');
+
+      // 儲位分區選單
+      const zones = ['全部', ...new Set(state.inventory.map(i => String(i.zone || '').split('-')[0]).filter(Boolean))];
+      const invZoneSel = document.getElementById('invZoneSelect');
+      invZoneSel.innerHTML = zones.map(z => `<option value="${escapeHtml(z)}" ${state.invZoneFilter === z ? 'selected' : ''}>倉儲分區：${escapeHtml(z)}</option>`).join('');
+    }
+
+    function renderKPIs() {
+      const totalSku = state.catalog.length;
+      const totalAssets = state.inventory.length;
+      const totalUnits = state.inventory.reduce((sum, i) => sum + Number(i.totalQty || 0), 0);
+      const availUnits = state.inventory.reduce((sum, i) => sum + Number(i.availableQty || 0), 0);
+      const borrowedUnits = state.inventory.reduce((sum, i) => sum + Number(i.borrowedQty || 0), 0);
+      const auditedCount = state.inventory.filter(i => String(i.auditStatus || '').includes('已盤點') || String(i.auditStatus || '').includes('差異')).length;
+      const progress = totalAssets > 0 ? Math.round((auditedCount / totalAssets) * 100) : 0;
+      const activeLoans = state.accessLogs.filter(l => l.status === '借出中').length;
+
+      document.getElementById('kpiTotalAssets').textContent = totalAssets;
+      document.getElementById('kpiTotalUnits').textContent = totalUnits;
+      document.getElementById('kpiAvailableUnits').textContent = availUnits;
+      document.getElementById('kpiCatalogCount').textContent = totalSku;
+      document.getElementById('kpiBorrowedUnits').textContent = borrowedUnits;
+      document.getElementById('kpiActiveLoans').textContent = activeLoans;
+      document.getElementById('kpiAuditProgress').textContent = progress + '%';
+      document.getElementById('kpiAuditRatio').textContent = `(${auditedCount}/${totalAssets})`;
+
+      document.getElementById('badgeInventoryCount').textContent = totalAssets;
+      document.getElementById('badgeCatalogCount').textContent = totalSku;
+      document.getElementById('badgeActiveLoans').textContent = activeLoans;
+      document.getElementById('badgeAuditProgress').textContent = progress + '%';
+    }
+
+    function renderInventoryTable() {
+      const tbody = document.getElementById('inventoryTableBody');
+      const q = state.invSearch.toLowerCase();
+      const filtered = state.inventory.filter(item => {
+        const matchSearch =
+          String(item.name || '').toLowerCase().includes(q) ||
+          String(item.assetCode || '').toLowerCase().includes(q) ||
+          String(item.spec || '').toLowerCase().includes(q) ||
+          String(item.zone || '').toLowerCase().includes(q);
+        const matchCat = state.invCategoryFilter === '全部' || item.category === state.invCategoryFilter;
+        const matchZone = state.invZoneFilter === '全部' || String(item.zone || '').startsWith(state.invZoneFilter);
+        return matchSearch && matchCat && matchZone;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-10 text-center text-slate-400">找不到符合條件的庫存資產，可點擊右上角「從產品清單建入庫存」新增</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(item => {
+        const isDiff = String(item.auditStatus || '').includes('差異');
+        const statusClass = isDiff ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
+        const borrowedHtml = Number(item.borrowedQty) > 0
+          ? `<span class="text-amber-600 font-bold">${item.borrowedQty} ${escapeHtml(item.unit)}</span>`
+          : `<span class="text-slate-300">0</span>`;
+
+        return `<tr class="hover:bg-slate-50/90 transition">
+          <td class="py-3 px-4">
+            <button type="button" data-action="preview-photo" data-invid="${escapeHtml(item.invId)}" class="group relative w-16 h-11 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 block cursor-pointer" title="點擊放大檢視盤點存證照片">
+              <img src="${item.photoUrl}" alt="${escapeHtml(item.name)}" class="w-full h-full object-cover" />
+            </button>
+          </td>
+          <td class="py-3 px-4 font-mono font-semibold text-blue-700 whitespace-nowrap">
+            ${escapeHtml(item.assetCode)}
+            <div class="text-[11px] font-sans font-normal text-slate-400">${escapeHtml(item.category)}</div>
+          </td>
+          <td class="py-3 px-4 max-w-xs">
+            <div class="font-semibold text-slate-900">${escapeHtml(item.name)}</div>
+            <div class="text-xs text-slate-500 truncate">${escapeHtml(item.spec)}</div>
+            ${item.note ? `<div class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">${escapeHtml(item.note)}</div>` : ''}
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+              ${escapeHtml(item.zone)}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right font-semibold text-slate-800 whitespace-nowrap">
+            ${item.totalQty} <span class="text-xs font-normal text-slate-400">${escapeHtml(item.unit)}</span>
+          </td>
+          <td class="py-3 px-4 text-right font-bold text-emerald-600 whitespace-nowrap">
+            ${item.availableQty} <span class="text-xs font-normal text-slate-400">${escapeHtml(item.unit)}</span>
+          </td>
+          <td class="py-3 px-4 text-right whitespace-nowrap">${borrowedHtml}</td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+              ${escapeHtml(item.auditStatus)}
+            </span>
+            <div class="text-[11px] text-slate-400 mt-0.5">盤點日: ${escapeHtml(item.lastAuditDate)}</div>
+          </td>
+          <td class="py-3 px-4 text-right whitespace-nowrap">
+            <div class="inline-flex items-center gap-1.5">
+              <button type="button" data-action="open-audit" data-invid="${escapeHtml(item.invId)}" class="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer">
+                盤點/拍照
+              </button>
+              <button type="button" data-action="open-loan-item" data-invid="${escapeHtml(item.invId)}" class="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition cursor-pointer">
+                借出/歸還
+              </button>
+              <button type="button" data-action="delete-inv" data-invid="${escapeHtml(item.invId)}" class="px-2 py-1 rounded-md text-xs font-medium text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="刪除此筆資產">
+                刪除
+              </button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderCatalogTable() {
+      const tbody = document.getElementById('catalogTableBody');
+      const q = state.catSearch.toLowerCase();
+      const filtered = state.catalog.filter(item => {
+        const matchSearch =
+          String(item.name || '').toLowerCase().includes(q) ||
+          String(item.id || '').toLowerCase().includes(q) ||
+          String(item.spec || '').toLowerCase().includes(q) ||
+          String(item.note || '').toLowerCase().includes(q);
+        const matchCat = state.catCategoryFilter === '全部' || item.category === state.catCategoryFilter;
+        return matchSearch && matchCat;
+      });
+
+      tbody.innerHTML = filtered.map(item => {
+        const enrolledBatches = state.inventory.filter(inv => inv.catalogId === item.id);
+        const enrolledTotalQty = enrolledBatches.reduce((sum, i) => sum + Number(i.totalQty || 0), 0);
+        const statusBadge = enrolledBatches.length > 0
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已建 ${enrolledBatches.length} 筆 (共 ${enrolledTotalQty} ${escapeHtml(item.unit)})</span>`
+          : `<span class="text-xs text-slate-400">尚未建入</span>`;
+
+        return `<tr class="hover:bg-slate-50 transition">
+          <td class="py-3 px-4 font-mono text-xs text-slate-500 whitespace-nowrap">${escapeHtml(item.id)}</td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <span class="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">${escapeHtml(item.category)}</span>
+          </td>
+          <td class="py-3 px-4 font-semibold text-slate-900">
+            ${escapeHtml(item.name)}
+            <div class="text-[11px] font-normal text-slate-400 line-clamp-1 mt-0.5">${escapeHtml(item.note)}</div>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-600 max-w-xs">${escapeHtml(item.spec)}</td>
+          <td class="py-3 px-4 text-center text-xs text-slate-600">${escapeHtml(item.unit)}</td>
+          <td class="py-3 px-4 text-right font-medium text-slate-700">${item.rfpQty}</td>
+          <td class="py-3 px-4 text-center whitespace-nowrap">${statusBadge}</td>
+          <td class="py-3 px-4 text-right whitespace-nowrap">
+            <button type="button" data-action="enroll-from-cat" data-catid="${escapeHtml(item.id)}" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition cursor-pointer">
+              + 選取建入前台庫存
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderAccessLogsTable() {
+      const tbody = document.getElementById('accessLogTableBody');
+      const q = state.logSearch.toLowerCase();
+      const filtered = state.accessLogs.filter(log => {
+        const items = getNormalizedLogItems(log);
+        const itemsText = items.map(it => `${it.itemName} ${it.assetCode}`).join(' ').toLowerCase();
+        const matchSearch =
+          String(log.vendorName || '').toLowerCase().includes(q) ||
+          String(log.projectEvent || '').toLowerCase().includes(q) ||
+          String(log.keyHolderStaff || '').toLowerCase().includes(q) ||
+          String(log.logId || '').toLowerCase().includes(q) ||
+          itemsText.includes(q);
+        const matchType = state.logTypeFilter === '全部' || String(log.type || '').includes(state.logTypeFilter);
+        return matchSearch && matchType;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-10 text-center text-slate-400">尚無符合條件的專人開關門與借還紀錄</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(log => {
+        const isBorrow = String(log.type || '').includes('借出');
+        const items = getNormalizedLogItems(log);
+        const totalQty = items.reduce((sum, it) => sum + Number(it.qty || 0), 0);
+
+        const typeBadge = isBorrow
+          ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">${escapeHtml(log.type)}</span>`
+          : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">${escapeHtml(log.type)}</span>`;
+
+        const statusBadge = log.status === '借出中'
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">借出中</span>`
+          : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已結案歸還</span>`;
+
+        const itemsListHtml = items.map(it => `
+          <div class="flex items-center justify-between gap-2 py-1 px-2 rounded bg-slate-50 border border-slate-200/80 text-xs">
+            <div class="min-w-0">
+              <span class="font-semibold text-slate-900">${escapeHtml(it.itemName)}</span>
+              <span class="font-mono text-[11px] text-blue-700 ml-1">(${escapeHtml(it.assetCode)})</span>
+            </div>
+            <span class="font-bold text-slate-800 shrink-0">${it.qty} ${escapeHtml(it.unit || '件')}</span>
+          </div>
+        `).join('');
+
+        const quickReturnBtn = log.status === '借出中'
+          ? `<button type="button" data-action="quick-return" data-logid="${escapeHtml(log.logId)}" class="px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition cursor-pointer" title="一鍵將此單所有品項點收歸還回倉">點收歸還</button>`
+          : '';
+
+        return `<tr class="hover:bg-slate-50 transition align-top">
+          <td class="py-3 px-4 whitespace-nowrap">
+            <div class="font-mono font-semibold text-slate-800">${escapeHtml(log.logId)}</div>
+            <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(log.date)}</div>
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">${typeBadge}</td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <div class="font-medium text-slate-900">開門 ${escapeHtml(log.doorOpenTime)} ~ 鎖門 ${escapeHtml(log.doorCloseTime)}</div>
+            <div class="text-xs text-emerald-700 font-medium mt-0.5">${escapeHtml(log.keyHolderStaff)}</div>
+          </td>
+          <td class="py-3 px-4">
+            <div class="font-semibold text-slate-900">${escapeHtml(log.vendorName)}</div>
+            <div class="text-xs text-slate-500">${escapeHtml(log.vendorContact)}</div>
+            <div class="text-xs text-blue-600 font-medium mt-0.5">${escapeHtml(log.projectEvent)}</div>
+          </td>
+          <td class="py-3 px-4 min-w-[260px]">
+            <div class="space-y-1.5">${itemsListHtml}</div>
+            ${log.note ? `<div class="text-[11px] text-slate-500 mt-1.5">備註：${escapeHtml(log.note)}</div>` : ''}
+          </td>
+          <td class="py-3 px-4 text-right whitespace-nowrap">
+            <div class="font-bold text-slate-900">${items.length} 項</div>
+            <div class="text-xs text-slate-500">共 ${totalQty} 件</div>
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            ${statusBadge}
+            <div class="text-[11px] text-slate-400 mt-0.5">預計歸還：${escapeHtml(log.expectedReturnDate || '-')}</div>
+          </td>
+          <td class="py-3 px-4 text-right whitespace-nowrap">
+            <div class="inline-flex items-center gap-1.5">
+              ${quickReturnBtn}
+              <button type="button" data-action="edit-log" data-logid="${escapeHtml(log.logId)}" class="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer">
+                修改品項
+              </button>
+              <button type="button" data-action="delete-log" data-logid="${escapeHtml(log.logId)}" class="px-2 py-1 rounded-md text-xs font-medium text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="刪除此筆借還單並自動沖銷庫存">
+                刪除
+              </button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderAuditCards() {
+      const grid = document.getElementById('auditCardsGrid');
+      const cardsHtml = state.inventory.map(item => {
+        const isDiff = String(item.auditStatus || '').includes('差異');
+        const badgeColor = isDiff ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white';
+
+        return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-blue-300 transition">
+          <div>
+            <div class="relative h-44 bg-slate-900 overflow-hidden">
+              <img src="${item.photoUrl}" alt="${escapeHtml(item.name)}" class="w-full h-full object-cover" />
+              <div class="absolute top-2.5 left-2.5">
+                <span class="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-slate-900/80 text-white">${escapeHtml(item.assetCode)}</span>
+              </div>
+              <div class="absolute top-2.5 right-2.5">
+                <span class="px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${badgeColor}">${escapeHtml(item.auditStatus)}</span>
+              </div>
+              <div class="absolute bottom-2 right-2">
+                <button type="button" data-action="open-audit" data-invid="${escapeHtml(item.invId)}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/95 hover:bg-white text-slate-900 shadow-sm transition cursor-pointer">
+                  重拍/更新盤點
+                </button>
+              </div>
+            </div>
+
+            <div class="p-4 space-y-2.5">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <span class="text-[11px] font-medium text-blue-600">${escapeHtml(item.category)}</span>
+                  <h3 class="text-sm font-bold text-slate-900 leading-snug">${escapeHtml(item.name)}</h3>
+                </div>
+                <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 shrink-0">${escapeHtml(item.zone)}</span>
+              </div>
+              <p class="text-xs text-slate-500">${escapeHtml(item.spec)}</p>
+
+              <div class="grid grid-cols-3 gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center">
+                <div>
+                  <div class="text-[11px] text-slate-500">帳面總數</div>
+                  <div class="text-sm font-bold text-slate-900">${item.totalQty} ${escapeHtml(item.unit)}</div>
+                </div>
+                <div class="border-x border-slate-200">
+                  <div class="text-[11px] text-slate-500">在庫實點</div>
+                  <div class="text-sm font-bold text-emerald-600">${item.availableQty} ${escapeHtml(item.unit)}</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-500">活動外借</div>
+                  <div class="text-sm font-bold text-amber-600">${item.borrowedQty} ${escapeHtml(item.unit)}</div>
+                </div>
+              </div>
+
+              <div class="text-xs text-slate-600 bg-slate-50/70 p-2 rounded border border-slate-100">
+                <span class="font-semibold text-slate-700">盤點備註：</span>${escapeHtml(item.note || '無特別備註')}
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>最後清點：${escapeHtml(item.lastAuditDate)}</span>
+            <button type="button" data-action="open-audit" data-invid="${escapeHtml(item.invId)}" class="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer">
+              修改清點數量與照片
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+
+      const addCardHtml = `<button type="button" data-action="open-enroll-empty" class="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-6 flex flex-col items-center justify-center text-center gap-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/30 transition min-h-[320px] cursor-pointer">
+        <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold">+</div>
+        <div>
+          <div class="text-sm font-bold text-slate-800">現場盤點發現新入庫道具？</div>
+          <p class="text-xs text-slate-500 mt-1 max-w-xs">
+            點擊此處從「三星 RFP 77 項標準產品清單」下拉選取品項，填寫資產編號、實點數量並上傳照片建入前台庫存
+          </p>
+        </div>
+      </button>`;
+
+      grid.innerHTML = cardsHtml + addCardHtml;
+    }
+
+    function renderAll() {
+      populateFilterSelects();
+      renderKPIs();
+      renderInventoryTable();
+      renderCatalogTable();
+      renderAccessLogsTable();
+      renderAuditCards();
+    }
+
+    // 10. 開啟與處理「從產品品項清單建入前台庫存」彈窗
+    function openEnrollModal(catId = null) {
+      const selectEl = document.getElementById('enrollCatalogSelect');
+      selectEl.innerHTML = state.catalog.map(c =>
+        `<option value="${escapeHtml(c.id)}">[${escapeHtml(c.category)}] ${escapeHtml(c.name)} (${escapeHtml(c.spec)})</option>`
+      ).join('');
+
+      const chosen = state.catalog.find(c => c.id === catId) || state.catalog[0];
+      if (chosen) {
+        selectEl.value = chosen.id;
+        applyCatalogSelectionToEnrollForm(chosen.id);
+      }
+      document.getElementById('enrollModal').classList.remove('hidden');
+    }
+
+    function applyCatalogSelectionToEnrollForm(catId) {
+      const chosen = state.catalog.find(c => c.id === catId);
+      if (!chosen) return;
+      const nextSeq = String(state.inventory.length + 1).padStart(3, '0');
+      const prefixPart = (chosen.codePrefix || 'SES-AST').split('-')[1] || 'AST';
+      const autoAssetCode = `SAM-${prefixPart}-2026-${nextSeq}`;
+      const defaultZone = 'A區-重型櫃體區-05';
+
+      document.getElementById('enrollAssetCode').value = autoAssetCode;
+      document.getElementById('enrollZone').value = defaultZone;
+      document.getElementById('enrollTotalQty').value = chosen.rfpQty || 1;
+      document.getElementById('enrollAvailableQty').value = chosen.rfpQty || 1;
+      document.getElementById('enrollCondition').value = '良好';
+      document.getElementById('enrollNote').value = chosen.note || '';
+
+      state.tempEnrollPhoto = createSvgPhoto(chosen.name, autoAssetCode, defaultZone.split('-')[0], '#1e3a8a');
+      document.getElementById('enrollPhotoPreview').src = state.tempEnrollPhoto;
+    }
+
+    // 11. 開啟「專人開關門 & 活動廠商借出/歸還登記」彈窗 (支援多品項動態增刪與修改既有紀錄)
+    function renderLoanDraftItems() {
+      const container = document.getElementById('loanItemsContainer');
+      const badge = document.getElementById('loanItemsSummaryBadge');
+
+      if (!state.loanDraftItems || state.loanDraftItems.length === 0) {
+        const fallbackInvId = state.inventory[0]?.invId || '';
+        state.loanDraftItems = [{ invId: fallbackInvId, qty: 1 }];
+      }
+
+      const totalQty = state.loanDraftItems.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+      if (badge) {
+        badge.textContent = `共 ${state.loanDraftItems.length} 項 / 合計 ${totalQty} 件`;
+      }
+
+      container.innerHTML = state.loanDraftItems.map((row, idx) => {
+        const optionsHtml = state.inventory.map(item =>
+          `<option value="${escapeHtml(item.invId)}" ${item.invId === row.invId ? 'selected' : ''}>[${escapeHtml(item.assetCode)}] ${escapeHtml(item.name)} (在庫:${item.availableQty}${escapeHtml(item.unit)} / 外借:${item.borrowedQty}${escapeHtml(item.unit)})</option>`
+        ).join('');
+
+        return `<div class="grid grid-cols-12 gap-2 items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
+          <div class="col-span-12 sm:col-span-8">
+            <label class="block text-[11px] font-semibold text-slate-500 mb-0.5">點交品項 #${idx + 1}</label>
+            <select data-loan-row-select="${idx}" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500">
+              ${optionsHtml}
+            </select>
+          </div>
+          <div class="col-span-8 sm:col-span-3">
+            <label class="block text-[11px] font-semibold text-slate-500 mb-0.5">點交數量</label>
+            <input type="number" min="1" required value="${Number(row.qty) || 1}" data-loan-row-qty="${idx}" class="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div class="col-span-4 sm:col-span-1 flex items-end justify-end pt-4">
+            <button type="button" data-action="remove-loan-row" data-rowidx="${idx}" class="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="移除此品項">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function openLoanModal(defaultInvId = null, editLogId = null) {
+      if (state.inventory.length === 0) {
+        showToast('目前前台尚無庫存資產，請先建入庫存後再辦理借還！', 'error');
+        return;
+      }
+
+      const editIdInput = document.getElementById('loanEditLogId');
+      const modalTitle = document.getElementById('loanModalTitle');
+
+      if (editLogId) {
+        const targetLog = state.accessLogs.find(l => l.logId === editLogId);
+        if (!targetLog) return;
+        editIdInput.value = targetLog.logId;
+        modalTitle.textContent = `修改專人開關門借還單 (${targetLog.logId})`;
+
+        document.getElementById('loanType').value = targetLog.type;
+        document.getElementById('loanDate').value = targetLog.date;
+        document.getElementById('loanOpenTime').value = targetLog.doorOpenTime || '10:00';
+        document.getElementById('loanCloseTime').value = targetLog.doorCloseTime || '11:30';
+        document.getElementById('loanStaff').value = targetLog.keyHolderStaff || '陳倉管 (專人開鎖/點交)';
+        document.getElementById('loanVendorName').value = targetLog.vendorName || '';
+        document.getElementById('loanVendorContact').value = targetLog.vendorContact || '';
+        document.getElementById('loanProjectEvent').value = targetLog.projectEvent || '';
+        document.getElementById('loanReturnDate').value = targetLog.expectedReturnDate || '';
+        document.getElementById('loanNote').value = targetLog.note || '';
+
+        const normItems = getNormalizedLogItems(targetLog);
+        state.loanDraftItems = normItems.map(it => ({
+          invId: it.invId || state.inventory[0].invId,
+          qty: Number(it.qty) || 1
+        }));
+      } else {
+        editIdInput.value = '';
+        modalTitle.textContent = '活動廠商拿取/歸還道具 ‧ 專人現場開關門登記 (多品項點交)';
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById('loanType').value = '借出 (領取道具)';
+        document.getElementById('loanDate').value = today;
+        document.getElementById('loanOpenTime').value = '10:00';
+        document.getElementById('loanCloseTime').value = '11:30';
+        document.getElementById('loanVendorName').value = '';
+        document.getElementById('loanVendorContact').value = '';
+        document.getElementById('loanProjectEvent').value = '';
+        document.getElementById('loanReturnDate').value = '2026-11-15';
+        document.getElementById('loanNote').value = '';
+
+        const firstInvId = defaultInvId || state.inventory[0].invId;
+        state.loanDraftItems = [{ invId: firstInvId, qty: 1 }];
+      }
+
+      renderLoanDraftItems();
+      document.getElementById('loanModal').classList.remove('hidden');
+    }
+
+    // 12. 開啟「單項盤點清點數量 & 拍照存證更新」彈窗
+    function openAuditModal(invId) {
+      const item = state.inventory.find(i => i.invId === invId);
+      if (!item) return;
+      document.getElementById('auditInvId').value = item.invId;
+      document.getElementById('auditItemCode').textContent = item.assetCode + ' | 儲位：' + item.zone;
+      document.getElementById('auditItemName').textContent = item.name;
+      document.getElementById('auditItemSpec').textContent = item.spec;
+      document.getElementById('auditCountInput').value = item.totalQty;
+      document.getElementById('auditConditionInput').value = item.condition || '良好';
+      document.getElementById('auditNoteInput').value = item.note || '';
+      state.tempAuditPhoto = item.photoUrl;
+      document.getElementById('auditPhotoPreview').src = item.photoUrl;
+      document.getElementById('auditModal').classList.remove('hidden');
+    }
+
+    // 13. 開啟「預覽提交給三星之正式圖文盤點報告」彈窗
+    function openReportModal() {
+      document.getElementById('reportSubtitle').textContent =
+        `盤點期別：${state.selectedAuditPeriod} | 倉庫地點：汐止倉 (約80坪，新北市汐止區橫科路407巷)`;
+      const genDateEl = document.getElementById('reportGenDate');
+      if (genDateEl) {
+        genDateEl.textContent = new Date().toISOString().slice(0, 10);
+      }
+
+      const totalAssets = state.inventory.length;
+      const totalUnits = state.inventory.reduce((sum, i) => sum + Number(i.totalQty || 0), 0);
+      const auditedCount = state.inventory.filter(i => String(i.auditStatus || '').includes('已盤點') || String(i.auditStatus || '').includes('差異')).length;
+      const progress = totalAssets > 0 ? Math.round((auditedCount / totalAssets) * 100) : 0;
+
+      document.getElementById('reportSummaryStats').innerHTML = `
+        <div>
+          <div class="text-xs text-slate-500">盤點制度</div>
+          <div class="font-bold text-slate-900">${state.auditCycleFreq === 'biannual' ? '一年兩次盤點 (H1/H2)' : '一年四次盤點 (Q1~Q4)'}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">列管資產編號數</div>
+          <div class="font-bold text-slate-900">${totalAssets} 筆</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">清點總件數 (在庫+外借)</div>
+          <div class="font-bold text-blue-700">${totalUnits} 件</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">盤點完成率</div>
+          <div class="font-bold text-emerald-700">${progress}% (附實品照)</div>
+        </div>
+      `;
+
+      document.getElementById('reportTableBody').innerHTML = state.inventory.map(item => `
+        <tr class="break-inside-avoid">
+          <td class="p-2.5 border-r border-slate-300 w-28">
+            <img src="${item.photoUrl}" alt="${escapeHtml(item.name)}" class="w-24 h-16 object-cover rounded border border-slate-200" />
+          </td>
+          <td class="p-2.5 border-r border-slate-300 font-mono">
+            <div class="font-bold text-blue-700">${escapeHtml(item.assetCode)}</div>
+            <div class="text-slate-500 font-sans mt-0.5">${escapeHtml(item.zone)}</div>
+          </td>
+          <td class="p-2.5 border-r border-slate-300">
+            <div class="font-bold text-slate-900">${escapeHtml(item.name)}</div>
+            <div class="text-slate-500">${escapeHtml(item.spec)}</div>
+          </td>
+          <td class="p-2.5 border-r border-slate-300 text-center font-bold text-slate-900">
+            ${item.totalQty} ${escapeHtml(item.unit)}
+          </td>
+          <td class="p-2.5 border-r border-slate-300 text-center">
+            <span class="text-emerald-700 font-semibold">在庫 ${item.availableQty}</span> /
+            <span class="text-amber-700 font-semibold">外借 ${item.borrowedQty}</span>
+          </td>
+          <td class="p-2.5">
+            <span class="font-semibold text-emerald-700">${escapeHtml(item.auditStatus)}</span> (${escapeHtml(item.lastAuditDate)})
+            <div class="text-slate-500 mt-0.5">${escapeHtml(item.note)}</div>
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('reportModal').classList.remove('hidden');
+    }
+
+    // 13-1. 直接產出並下載 A4 橫向 PDF 檔案 (解決 iframe 預覽環境阻擋 window.print 的問題)
+    async function downloadReportAsPDF() {
+      const element = document.getElementById('reportPrintableArea');
+      const btn = document.getElementById('btnDownloadPdfReport');
+      const btnText = document.getElementById('btnDownloadPdfText');
+
+      if (!element) return;
+
+      if (typeof html2pdf === 'undefined') {
+        showToast('PDF 轉換模組載入中，請稍候再試或使用系統列印', 'error');
+        window.print();
+        return;
+      }
+
+      try {
+        btn.disabled = true;
+        btnText.textContent = '正在產生 PDF...';
+        showToast('正在產生三星倉庫盤點 PDF 報告，請稍候...');
+
+        // 暫時展開高度以確保完整擷取所有表格列
+        const originalMaxHeight = element.style.maxHeight;
+        const originalOverflow = element.style.overflow;
+        element.style.maxHeight = 'none';
+        element.style.overflow = 'visible';
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const opt = {
+          margin: [8, 8, 8, 8],
+          filename: `Samsung_汐止倉定期盤點報告_${todayStr}.pdf`,
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            scrollY: 0
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+
+        await html2pdf().set(opt).from(element).save();
+
+        element.style.maxHeight = originalMaxHeight;
+        element.style.overflow = originalOverflow;
+        showToast('PDF 盤點報告已成功下載！');
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        showToast('PDF 轉換發生異常，已為您啟動備用列印模式', 'error');
+        window.print();
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = '直接下載 PDF 檔案';
+      }
+    }
+
+    // 14. 匯出 CSV 報表
+    function exportInventoryCSV() {
+      const headers = [
+        '資產編號',
+        '產品類別',
+        '產品名稱',
+        '規格/尺寸',
+        '單位',
+        '帳面總數',
+        '在庫可用數量',
+        '外借中數量',
+        '存放儲位',
+        '資產狀態',
+        '最後盤點日期',
+        '盤點結果',
+        '備註說明'
+      ];
+      const rows = state.inventory.map(i => [
+        i.assetCode,
+        i.category,
+        `"${String(i.name || '').replace(/"/g, '""')}"`,
+        `"${String(i.spec || '').replace(/"/g, '""')}"`,
+        i.unit,
+        i.totalQty,
+        i.availableQty,
+        i.borrowedQty,
+        i.zone,
+        i.condition,
+        i.lastAuditDate,
+        i.auditStatus,
+        `"${String(i.note || '').replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Samsung_汐止倉資產盤點清冊_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('已匯出三星倉庫資產盤點 CSV 報表！');
+    }
+
+    // 15. 綁定所有 DOM 事件
+    window.addEventListener('DOMContentLoaded', () => {
+      renderAll();
+      initFirebase();
+
+      // 導覽分頁切換
+      document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetTab = btn.getAttribute('data-tab');
+          state.activeTab = targetTab;
+
+          document.querySelectorAll('.nav-tab-btn').forEach(b => {
+            if (b.getAttribute('data-tab') === targetTab) {
+              b.className = 'nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-blue-400 text-white bg-slate-800/70 rounded-t-lg';
+            } else {
+              b.className = 'nav-tab-btn flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition cursor-pointer border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40';
+            }
+          });
+
+          ['inventory', 'catalog', 'access_loan', 'audit'].forEach(sec => {
+            const el = document.getElementById('tabSection_' + sec);
+            if (sec === targetTab) {
+              el.classList.remove('hidden');
+            } else {
+              el.classList.add('hidden');
+            }
+          });
+        });
+      });
+
+      // 搜尋與篩選事件
+      document.getElementById('invSearchInput').addEventListener('input', e => {
+        state.invSearch = e.target.value;
+        renderInventoryTable();
+      });
+      document.getElementById('invCategorySelect').addEventListener('change', e => {
+        state.invCategoryFilter = e.target.value;
+        renderInventoryTable();
+      });
+      document.getElementById('invZoneSelect').addEventListener('change', e => {
+        state.invZoneFilter = e.target.value;
+        renderInventoryTable();
+      });
+
+      document.getElementById('catSearchInput').addEventListener('input', e => {
+        state.catSearch = e.target.value;
+        renderCatalogTable();
+      });
+      document.getElementById('catCategorySelect').addEventListener('change', e => {
+        state.catCategoryFilter = e.target.value;
+        renderCatalogTable();
+      });
+
+      document.getElementById('logSearchInput').addEventListener('input', e => {
+        state.logSearch = e.target.value;
+        renderAccessLogsTable();
+      });
+
+      document.querySelectorAll('.log-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.logTypeFilter = btn.getAttribute('data-logfilter');
+          document.querySelectorAll('.log-filter-btn').forEach(b => {
+            b.className = b === btn
+              ? 'log-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white cursor-pointer'
+              : 'log-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer';
+          });
+          renderAccessLogsTable();
+        });
+      });
+
+      // 頂部與各區塊按鈕
+      document.getElementById('btnOpenEnrollTop').addEventListener('click', () => openEnrollModal(null));
+      document.getElementById('btnOpenEnrollInv').addEventListener('click', () => openEnrollModal(null));
+      document.getElementById('btnOpenLoanTop').addEventListener('click', () => openLoanModal(null));
+      document.getElementById('btnOpenLoanSec').addEventListener('click', () => openLoanModal(null));
+      document.getElementById('btnSyncSeed').addEventListener('click', () => seedFirestoreData(true));
+      document.getElementById('btnExportCsvInv').addEventListener('click', exportInventoryCSV);
+      document.getElementById('btnExportCsvReport').addEventListener('click', exportInventoryCSV);
+      document.getElementById('btnDownloadPdfReport').addEventListener('click', downloadReportAsPDF);
+      document.getElementById('btnPrintReport').addEventListener('click', () => window.print());
+
+      // 盤點週期切換
+      document.getElementById('btnCycleBiannual').addEventListener('click', () => {
+        state.auditCycleFreq = 'biannual';
+        state.selectedAuditPeriod = '2026-H2 (下半年定期盤點)';
+        document.getElementById('auditPeriodBadge').textContent = '當前盤點期別：' + state.selectedAuditPeriod;
+        document.getElementById('btnCycleBiannual').className = 'px-3 py-1.5 rounded-md text-xs font-semibold bg-white text-blue-700 shadow-sm transition cursor-pointer';
+        document.getElementById('btnCycleQuarterly').className = 'px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 transition cursor-pointer';
+      });
+      document.getElementById('btnCycleQuarterly').addEventListener('click', () => {
+        state.auditCycleFreq = 'quarterly';
+        state.selectedAuditPeriod = '2026-Q4 (第四季定期盤點)';
+        document.getElementById('auditPeriodBadge').textContent = '當前盤點期別：' + state.selectedAuditPeriod;
+        document.getElementById('btnCycleQuarterly').className = 'px-3 py-1.5 rounded-md text-xs font-semibold bg-white text-blue-700 shadow-sm transition cursor-pointer';
+        document.getElementById('btnCycleBiannual').className = 'px-3 py-1.5 rounded-md text-xs font-semibold text-slate-600 transition cursor-pointer';
+      });
+
+      document.getElementById('btnOpenReportModal').addEventListener('click', openReportModal);
+      document.getElementById('btnCloseReportModal').addEventListener('click', () => {
+        document.getElementById('reportModal').classList.add('hidden');
+      });
+
+      // 關閉各 Modal
+      document.getElementById('btnCloseEnrollModal').addEventListener('click', () => document.getElementById('enrollModal').classList.add('hidden'));
+      document.getElementById('btnCancelEnroll').addEventListener('click', () => document.getElementById('enrollModal').classList.add('hidden'));
+      document.getElementById('btnCloseLoanModal').addEventListener('click', () => document.getElementById('loanModal').classList.add('hidden'));
+      document.getElementById('btnCancelLoan').addEventListener('click', () => document.getElementById('loanModal').classList.add('hidden'));
+      document.getElementById('btnCloseAuditModal').addEventListener('click', () => document.getElementById('auditModal').classList.add('hidden'));
+      document.getElementById('btnCancelAudit').addEventListener('click', () => document.getElementById('auditModal').classList.add('hidden'));
+      document.getElementById('btnClosePhotoPreview').addEventListener('click', () => document.getElementById('photoPreviewModal').classList.add('hidden'));
+
+      // 自訂品項 Modal
+      document.getElementById('btnAddCustomCatalog').addEventListener('click', () => {
+        document.getElementById('customCatalogModal').classList.remove('hidden');
+      });
+      document.getElementById('btnCloseCustomCatalogModal').addEventListener('click', () => {
+        document.getElementById('customCatalogModal').classList.add('hidden');
+      });
+      document.getElementById('btnCancelCustomCatalog').addEventListener('click', () => {
+        document.getElementById('customCatalogModal').classList.add('hidden');
+      });
+
+      document.getElementById('customCatalogForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const nextNum = String(state.catalog.length + 1).padStart(3, '0');
+        const newCat = {
+          id: `CAT-${nextNum}`,
+          codePrefix: 'SES-CUS',
+          category: document.getElementById('newCatCategory').value.trim(),
+          name: document.getElementById('newCatName').value.trim(),
+          spec: document.getElementById('newCatSpec').value.trim(),
+          unit: document.getElementById('newCatUnit').value.trim() || '組',
+          rfpQty: Number(document.getElementById('newCatQty').value) || 1,
+          note: document.getElementById('newCatNote').value.trim()
+        };
+
+        state.catalog.push(newCat);
+        renderAll();
+        document.getElementById('customCatalogModal').classList.add('hidden');
+
+        if (db) {
+          try {
+            await db.collection('catalog_custom').doc(newCat.id).set(newCat);
+          } catch (err) {
+            console.warn('Firestore save custom catalog error:', err);
+          }
+        }
+        showToast(`已新增品項「${newCat.name}」(${newCat.id}) 至產品主檔！`);
+      });
+
+      // 建入庫存 Modal 下拉選單與圖片上傳
+      document.getElementById('enrollCatalogSelect').addEventListener('change', e => {
+        applyCatalogSelectionToEnrollForm(e.target.value);
+      });
+      document.getElementById('enrollTotalQty').addEventListener('input', e => {
+        document.getElementById('enrollAvailableQty').value = e.target.value;
+      });
+      document.getElementById('enrollPhotoInput').addEventListener('change', e => {
+        compressImageFile(e.target.files?.[0], dataUrl => {
+          state.tempEnrollPhoto = dataUrl;
+          document.getElementById('enrollPhotoPreview').src = dataUrl;
+          showToast('現場盤點照片已壓縮載入！');
+        });
+      });
+
+      // 送出「建入前台庫存」表單 (同步寫入 Firestore `inventory`)
+      document.getElementById('enrollForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const catId = document.getElementById('enrollCatalogSelect').value;
+        const chosen = state.catalog.find(c => c.id === catId);
+        if (!chosen) return;
+
+        const totalQty = Number(document.getElementById('enrollTotalQty').value) || 1;
+        const availQty = Number(document.getElementById('enrollAvailableQty').value);
+        const assetCode = document.getElementById('enrollAssetCode').value.trim() || `SAM-AST-${Date.now()}`;
+        const zone = document.getElementById('enrollZone').value.trim() || 'A區-01';
+
+        const newInvItem = {
+          invId: `INV-${Date.now().toString().slice(-5)}`,
+          catalogId: chosen.id,
+          assetCode,
+          name: chosen.name,
+          category: chosen.category,
+          spec: chosen.spec,
+          unit: chosen.unit,
+          totalQty,
+          availableQty: availQty,
+          borrowedQty: Math.max(0, totalQty - availQty),
+          zone,
+          condition: document.getElementById('enrollCondition').value,
+          lastAuditDate: new Date().toISOString().slice(0, 10),
+          auditStatus: '已盤點相符',
+          photoUrl: state.tempEnrollPhoto || createSvgPhoto(chosen.name, assetCode, zone, '#1e3a8a'),
+          note: document.getElementById('enrollNote').value.trim()
+        };
+
+        state.inventory.unshift(newInvItem);
+        renderAll();
+        document.getElementById('enrollModal').classList.add('hidden');
+
+        if (db) {
+          try {
+            await db.collection('inventory').doc(newInvItem.invId).set(newInvItem);
+          } catch (err) {
+            console.warn('Firestore write inventory error:', err);
+          }
+        }
+        showToast(`已將「${chosen.name}」(${assetCode}) 建入前台庫存並同步至雲端！`);
+      });
+
+      // 借還登記 Modal 內：新增一列品項、切換品項與修改數量事件
+      document.getElementById('btnAddLoanItemRow').addEventListener('click', () => {
+        const nextCandidate = state.inventory.find(i => !state.loanDraftItems.some(d => d.invId === i.invId)) || state.inventory[0];
+        if (!nextCandidate) return;
+        state.loanDraftItems.push({ invId: nextCandidate.invId, qty: 1 });
+        renderLoanDraftItems();
+      });
+
+      document.getElementById('loanItemsContainer').addEventListener('change', e => {
+        const selIdx = e.target.getAttribute('data-loan-row-select');
+        if (selIdx !== null) {
+          state.loanDraftItems[Number(selIdx)].invId = e.target.value;
+          renderLoanDraftItems();
+        }
+      });
+
+      document.getElementById('loanItemsContainer').addEventListener('input', e => {
+        const qtyIdx = e.target.getAttribute('data-loan-row-qty');
+        if (qtyIdx !== null) {
+          state.loanDraftItems[Number(qtyIdx)].qty = Math.max(1, Number(e.target.value) || 1);
+          const totalQty = state.loanDraftItems.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+          const badge = document.getElementById('loanItemsSummaryBadge');
+          if (badge) {
+            badge.textContent = `共 ${state.loanDraftItems.length} 項 / 合計 ${totalQty} 件`;
+          }
+        }
+      });
+
+      // 送出「專人開關門 & 借出/歸還登記」表單 (支援多品項新增、修改既有借還單與庫存差額沖銷)
+      document.getElementById('loanForm').addEventListener('submit', async e => {
+        e.preventDefault();
+
+        const editLogId = document.getElementById('loanEditLogId').value.trim();
+        const type = document.getElementById('loanType').value;
+        const isBorrow = type.includes('借出');
+
+        // 彙整表單中的多品項清單 (若同品項重複選取則自動合併數量)
+        const mergedMap = new Map();
+        for (const row of state.loanDraftItems) {
+          const qty = Math.max(1, Number(row.qty) || 1);
+          if (!row.invId) continue;
+          mergedMap.set(row.invId, (mergedMap.get(row.invId) || 0) + qty);
+        }
+
+        if (mergedMap.size === 0) {
+          showToast('請至少新增一項點交道具！', 'error');
+          return;
+        }
+
+        // 建立暫存庫存副本，若是修改既有借還單，先將舊單對庫存的影響還原
+        const tempInvMap = new Map(state.inventory.map(item => [item.invId, { ...item }]));
+        let existingLog = null;
+
+        if (editLogId) {
+          existingLog = state.accessLogs.find(l => l.logId === editLogId);
+          if (existingLog && existingLog.status === '借出中') {
+            const oldItems = getNormalizedLogItems(existingLog);
+            for (const oldIt of oldItems) {
+              const inv = tempInvMap.get(oldIt.invId);
+              if (inv) {
+                inv.availableQty = Number(inv.availableQty) + Number(oldIt.qty);
+                inv.borrowedQty = Math.max(0, Number(inv.borrowedQty) - Number(oldIt.qty));
+              }
+            }
+          }
+        }
+
+        // 驗證每一項道具的在庫可用數量或外借數量是否足夠
+        const finalItems = [];
+        const touchedInvIds = new Set();
+
+        for (const [invId, qtyNum] of mergedMap.entries()) {
+          const targetInv = tempInvMap.get(invId);
+          if (!targetInv) continue;
+
+          if (isBorrow && qtyNum > targetInv.availableQty) {
+            showToast(`庫存可用數量不足！「${targetInv.name}」目前可用數量為 ${targetInv.availableQty} ${targetInv.unit}`, 'error');
+            return;
+          }
+          if (!isBorrow && !editLogId && qtyNum > targetInv.borrowedQty) {
+            showToast(`歸還數量超過外借數量！「${targetInv.name}」目前外借中數量為 ${targetInv.borrowedQty} ${targetInv.unit}`, 'error');
+            return;
+          }
+
+          // 若是新單，或是修改仍在「借出中」的紀錄，套用新的庫存增減
+          const shouldApplyStockChange = !editLogId || (existingLog && existingLog.status === '借出中');
+          if (shouldApplyStockChange) {
+            targetInv.availableQty = isBorrow
+              ? Number(targetInv.availableQty) - qtyNum
+              : Number(targetInv.availableQty) + qtyNum;
+            targetInv.borrowedQty = isBorrow
+              ? Number(targetInv.borrowedQty) + qtyNum
+              : Math.max(0, Number(targetInv.borrowedQty) - qtyNum);
+            touchedInvIds.add(invId);
+          }
+
+          finalItems.push({
+            invId: targetInv.invId,
+            assetCode: targetInv.assetCode,
+            itemName: targetInv.name,
+            unit: targetInv.unit,
+            qty: qtyNum
+          });
+        }
+
+        const totalQty = finalItems.reduce((sum, it) => sum + it.qty, 0);
+        const dateStr = document.getElementById('loanDate').value || new Date().toISOString().slice(0, 10);
+        const logIdToSave = editLogId || `LOG-${dateStr.replace(/-/g, '')}-${String(state.accessLogs.length + 1).padStart(2, '0')}`;
+
+        const savedLog = {
+          logId: logIdToSave,
+          type,
+          date: dateStr,
+          doorOpenTime: document.getElementById('loanOpenTime').value,
+          doorCloseTime: document.getElementById('loanCloseTime').value,
+          vendorName: document.getElementById('loanVendorName').value.trim() || '活動執行協力廠商',
+          vendorContact: document.getElementById('loanVendorContact').value.trim() || '現場負責人',
+          projectEvent: document.getElementById('loanProjectEvent').value.trim() || '門市活動調撥',
+          keyHolderStaff: document.getElementById('loanStaff').value.trim(),
+          items: finalItems,
+          totalQty,
+          // 相容舊欄位顯示
+          invId: finalItems[0].invId,
+          assetCode: finalItems[0].assetCode,
+          itemName: finalItems.length > 1 ? `${finalItems[0].itemName} 等 ${finalItems.length} 項` : finalItems[0].itemName,
+          qty: totalQty,
+          status: editLogId && existingLog ? existingLog.status : (isBorrow ? '借出中' : '已結案歸還'),
+          expectedReturnDate: document.getElementById('loanReturnDate').value,
+          note: document.getElementById('loanNote').value.trim()
+        };
+
+        state.inventory = state.inventory.map(item => tempInvMap.get(item.invId) || item);
+        if (editLogId) {
+          state.accessLogs = state.accessLogs.map(l => (l.logId === editLogId ? savedLog : l));
+        } else {
+          state.accessLogs.unshift(savedLog);
+        }
+
+        renderAll();
+        document.getElementById('loanModal').classList.add('hidden');
+
+        if (db) {
+          try {
+            const batch = db.batch();
+            touchedInvIds.forEach(invId => {
+              const updatedInv = tempInvMap.get(invId);
+              if (updatedInv) {
+                batch.set(db.collection('inventory').doc(updatedInv.invId), updatedInv);
+              }
+            });
+            batch.set(db.collection('access_logs').doc(savedLog.logId), savedLog);
+            await batch.commit();
+          } catch (err) {
+            console.warn('Firestore loan batch error:', err);
+          }
+        }
+        showToast(`已儲存借還單 (${savedLog.logId}) 共 ${finalItems.length} 項道具並同步更新庫存！`);
+      });
+
+      // 盤點 Modal 圖片上傳與儲存
+      document.getElementById('auditPhotoFile').addEventListener('change', e => {
+        compressImageFile(e.target.files?.[0], dataUrl => {
+          state.tempAuditPhoto = dataUrl;
+          document.getElementById('auditPhotoPreview').src = dataUrl;
+          showToast('新拍攝的盤點照片已載入！');
+        });
+      });
+
+      document.getElementById('auditForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const invId = document.getElementById('auditInvId').value;
+        const target = state.inventory.find(i => i.invId === invId);
+        if (!target) return;
+
+        const newCount = Number(document.getElementById('auditCountInput').value);
+        const isMatched = newCount === Number(target.totalQty);
+        const diff = newCount - Number(target.totalQty);
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        const updatedItem = {
+          ...target,
+          totalQty: newCount,
+          availableQty: Math.max(0, Number(target.availableQty) + diff),
+          condition: document.getElementById('auditConditionInput').value,
+          note: document.getElementById('auditNoteInput').value.trim(),
+          photoUrl: state.tempAuditPhoto || target.photoUrl,
+          lastAuditDate: todayStr,
+          auditStatus: isMatched ? '已盤點相符' : '盤點有差異'
+        };
+
+        state.inventory = state.inventory.map(i => (i.invId === invId ? updatedItem : i));
+        renderAll();
+        document.getElementById('auditModal').classList.add('hidden');
+
+        if (db) {
+          try {
+            await db.collection('inventory').doc(updatedItem.invId).set(updatedItem);
+          } catch (err) {
+            console.warn('Firestore update audit error:', err);
+          }
+        }
+        showToast(`已更新「${updatedItem.name}」盤點數量與存證照片！`);
+      });
+
+      // 事件委派：處理表格與卡片內的動態按鈕點擊
+      document.body.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+
+        if (action === 'preview-photo') {
+          const invId = btn.getAttribute('data-invid');
+          const item = state.inventory.find(i => i.invId === invId);
+          if (!item) return;
+          document.getElementById('photoPreviewImg').src = item.photoUrl;
+          document.getElementById('photoPreviewCode').textContent = item.assetCode;
+          document.getElementById('photoPreviewTitle').textContent = item.name;
+          document.getElementById('photoPreviewMeta').textContent = `儲位：${item.zone} | 最後盤點日：${item.lastAuditDate}`;
+          document.getElementById('photoPreviewModal').classList.remove('hidden');
+        } else if (action === 'open-audit') {
+          openAuditModal(btn.getAttribute('data-invid'));
+        } else if (action === 'open-loan-item') {
+          openLoanModal(btn.getAttribute('data-invid'), null);
+        } else if (action === 'remove-loan-row') {
+          const rowIdx = Number(btn.getAttribute('data-rowidx'));
+          if (state.loanDraftItems.length <= 1) {
+            showToast('每張借還單至少需保留一項道具！', 'error');
+            return;
+          }
+          state.loanDraftItems.splice(rowIdx, 1);
+          renderLoanDraftItems();
+        } else if (action === 'edit-log') {
+          const logId = btn.getAttribute('data-logid');
+          openLoanModal(null, logId);
+        } else if (action === 'delete-log') {
+          const logId = btn.getAttribute('data-logid');
+          const logItem = state.accessLogs.find(l => l.logId === logId);
+          if (!logItem) return;
+
+          const updatedInvList = [];
+          // 若刪除的是尚未歸還的「借出中」紀錄，自動將外借數量沖銷加回在庫可用數量
+          if (logItem.status === '借出中') {
+            const items = getNormalizedLogItems(logItem);
+            state.inventory = state.inventory.map(inv => {
+              const matched = items.find(it => it.invId === inv.invId);
+              if (!matched) return inv;
+              const restored = {
+                ...inv,
+                availableQty: Number(inv.availableQty) + Number(matched.qty),
+                borrowedQty: Math.max(0, Number(inv.borrowedQty) - Number(matched.qty))
+              };
+              updatedInvList.push(restored);
+              return restored;
+            });
+          }
+
+          state.accessLogs = state.accessLogs.filter(l => l.logId !== logId);
+          renderAll();
+
+          if (db) {
+            try {
+              const batch = db.batch();
+              batch.delete(db.collection('access_logs').doc(logId));
+              updatedInvList.forEach(uInv => {
+                batch.set(db.collection('inventory').doc(uInv.invId), uInv);
+              });
+              await batch.commit();
+            } catch (err) {
+              console.warn('Firestore delete log error:', err);
+            }
+          }
+          showToast(`已刪除借還單 ${logId}${updatedInvList.length > 0 ? '，並已將未歸還品項沖銷回補至在庫數量' : ''}！`);
+        } else if (action === 'enroll-from-cat') {
+          openEnrollModal(btn.getAttribute('data-catid'));
+        } else if (action === 'open-enroll-empty') {
+          openEnrollModal(null);
+        } else if (action === 'delete-inv') {
+          const invId = btn.getAttribute('data-invid');
+          const target = state.inventory.find(i => i.invId === invId);
+          if (!target) return;
+          state.inventory = state.inventory.filter(i => i.invId !== invId);
+          renderAll();
+          if (db) {
+            try {
+              await db.collection('inventory').doc(invId).delete();
+            } catch (err) {
+              console.warn('Firestore delete error:', err);
+            }
+          }
+          showToast(`已刪除資產「${target.name}」(${target.assetCode})`);
+        } else if (action === 'quick-return') {
+          const logId = btn.getAttribute('data-logid');
+          const logItem = state.accessLogs.find(l => l.logId === logId);
+          if (!logItem || logItem.status !== '借出中') return;
+
+          const items = getNormalizedLogItems(logItem);
+          const updatedInvList = [];
+
+          state.inventory = state.inventory.map(inv => {
+            const matched = items.find(it => it.invId === inv.invId);
+            if (!matched) return inv;
+            const updatedInv = {
+              ...inv,
+              availableQty: Number(inv.availableQty) + Number(matched.qty),
+              borrowedQty: Math.max(0, Number(inv.borrowedQty) - Number(matched.qty))
+            };
+            updatedInvList.push(updatedInv);
+            return updatedInv;
+          });
+
+          const updatedLog = { ...logItem, status: '已結案歸還' };
+          state.accessLogs = state.accessLogs.map(l => (l.logId === logId ? updatedLog : l));
+          renderAll();
+
+          if (db) {
+            try {
+              const batch = db.batch();
+              batch.set(db.collection('access_logs').doc(logId), updatedLog);
+              updatedInvList.forEach(uInv => {
+                batch.set(db.collection('inventory').doc(uInv.invId), uInv);
+              });
+              await batch.commit();
+            } catch (err) {
+              console.warn('Firestore quick return error:', err);
+            }
+          }
+          showToast(`專人點收完成！單號 ${logId} 共 ${items.length} 項道具已全數歸還回汐止倉！`);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
